@@ -224,6 +224,17 @@ func (c *Client) parseSSEStream(ctx context.Context, body io.Reader, ch chan<- m
 
 // parseSSEChunk parses a single SSE chunk.
 func (c *Client) parseSSEChunk(chunk string) models.StreamChunk {
+	// Ignore SSE comments (lines starting with ':') - these are keep-alive pings
+	// Format: ": ping - 2025-12-01 15:52:17.152450"
+	if strings.HasPrefix(chunk, ":") {
+		return models.StreamChunk{}
+	}
+
+	// Ignore ping events
+	if strings.HasPrefix(chunk, "event: ping") || strings.Contains(chunk, "\nevent: ping") {
+		return models.StreamChunk{}
+	}
+
 	// Strip SSE prefix
 	data := chunk
 	if strings.HasPrefix(chunk, "event: message") {

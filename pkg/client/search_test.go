@@ -221,6 +221,26 @@ func TestParseSSEChunk(t *testing.T) {
 		want  models.StreamChunk
 	}{
 		{
+			name:  "SSE comment ping with timestamp",
+			chunk: ": ping - 2025-12-01 15:52:17.152450",
+			want:  models.StreamChunk{},
+		},
+		{
+			name:  "SSE comment simple",
+			chunk: ": keep-alive",
+			want:  models.StreamChunk{},
+		},
+		{
+			name:  "event ping",
+			chunk: "event: ping",
+			want:  models.StreamChunk{},
+		},
+		{
+			name:  "event ping with data",
+			chunk: "event: ping\ndata: {}",
+			want:  models.StreamChunk{},
+		},
+		{
 			name:  "done signal",
 			chunk: "data: [DONE]",
 			want:  models.StreamChunk{Done: true},
