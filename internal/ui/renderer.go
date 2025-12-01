@@ -22,9 +22,14 @@ type Renderer struct {
 
 // Styles for different output elements.
 var (
+	// Custom Warm Colors for Theme
+	WarmColorPrimary = lipgloss.Color("#F9C74F") // Light orange/yellow
+	WarmColorDark    = lipgloss.Color("#E36414") // Darker orange
+	WarmColorBg      = lipgloss.Color("#1E1E1E") // Dark background for code
+
 	TitleStyle = lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("99")).
+			Foreground(WarmColorPrimary).
 			MarginBottom(1)
 
 	InfoStyle = lipgloss.NewStyle().
@@ -41,6 +46,16 @@ var (
 	WarningStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("214"))
+
+	SpinnerStyle = lipgloss.NewStyle().
+		Foreground(WarmColorPrimary)
+
+	// Style for the main response container (border, padding)
+	ResponseContainerStyle = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(WarmColorPrimary).
+		Padding(1, 2).
+		Margin(1, 0, 0, 0)
 
 	CitationStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("39")).
@@ -66,6 +81,7 @@ func NewRendererWithOptions(out io.Writer, width int, useColors bool) (*Renderer
 
 	mdRender, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
+		glamour.WithStylePath("dracula"), // A good warm-ish, dark theme for code highlighting
 		glamour.WithWordWrap(width),
 		glamour.WithStylePath(style),
 	)
@@ -103,11 +119,31 @@ func (r *Renderer) RenderMarkdown(content string) error {
 	return nil
 }
 
+// RenderStyledResponse renders content inside the stylized container with Markdown formatting.
+func (r *Renderer) RenderStyledResponse(content string) error {
+	if r.mdRender == nil {
+		fmt.Fprintln(r.out, content)
+		return nil
+	}
+	// 1. Render Markdown content internally using glamour
+	rendered, err := r.mdRender.Render(content)
+	if err != nil {
+		return r.RenderMarkdown(content) // Fallback to basic markdown render
+	}
+	// 2. Wrap the rendered content in the container style
+	styledContent := ResponseContainerStyle.
+		Width(r.width).
+		Foreground(lipgloss.Color("252")). // Light gray text for readability inside the box
+		Render(rendered)
+	fmt.Fprintln(r.out, styledContent)
+	return nil
+}
+
 // RenderResponse renders a complete search response.
 func (r *Renderer) RenderResponse(resp *models.SearchResponse) error {
 	// First check for new format with direct Text and WebResults
 	if resp.Text != "" {
-		if err := r.RenderMarkdown(resp.Text); err != nil {
+		if err := r.RenderStyledResponse(resp.Text); err != nil {
 			return err
 		}
 
@@ -121,7 +157,7 @@ func (r *Renderer) RenderResponse(resp *models.SearchResponse) error {
 	// Fallback: Find and render markdown blocks (legacy format)
 	for _, block := range resp.Blocks {
 		if block.MarkdownBlock != nil {
-			if err := r.RenderMarkdown(block.MarkdownBlock.Answer); err != nil {
+			if err := r.RenderStyledResponse(block.MarkdownBlock.Answer); err != nil {
 				return err
 			}
 
@@ -254,7 +290,7 @@ func (r *Renderer) RenderTitle(title string) {
 // RenderSpinner renders a spinner character.
 func (r *Renderer) RenderSpinner(frame int) {
 	idx := frame % len(SpinnerChars)
-	fmt.Fprintf(r.out, "\r%s ", SpinnerChars[idx])
+	fmt.Fprintf(r.out, "\r%s ", SpinnerStyle.Render(SpinnerChars[idx]))
 }
 
 // ClearLine clears the current line.

@@ -81,7 +81,7 @@ var historyShowCmd = &cobra.Command{
 		fmt.Printf("Model:     %s\n", entry.Model)
 		if entry.Response != "" {
 			fmt.Println("\nResponse:")
-			render.RenderMarkdown(entry.Response)
+			render.RenderStyledResponse(entry.Response)
 		}
 
 		return nil

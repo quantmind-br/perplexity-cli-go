@@ -180,19 +180,20 @@ func runQuery(cmd *cobra.Command, args []string) error {
 		// Streaming mode
 		ch, err := cli.SearchStream(ctx, opts)
 		if err != nil {
-			render.RenderError(err)
+			render.RenderError(err) // Render error from stream initiation
 			return err
 		}
 
 		var fullResponse strings.Builder
 		var allWebResults []models.WebResult
 		for chunk := range ch {
-			if chunk.Error != nil {
+			if chunk.Error != nil { // Handle all chunk errors
 				if chunk.Error == context.Canceled {
 					render.NewLine()
 					render.RenderWarning("Search cancelled")
-					break
+					break // Exit loop on cancel
 				}
+				// Report other errors
 				render.RenderError(chunk.Error)
 				return chunk.Error
 			}
@@ -200,7 +201,7 @@ func runQuery(cmd *cobra.Command, args []string) error {
 			// For new step-based format, only render FINAL step
 			if chunk.StepType == "FINAL" && chunk.Text != "" {
 				// Render as markdown instead of raw text
-				if err := render.RenderMarkdown(chunk.Text); err != nil {
+				if err := render.RenderStyledResponse(chunk.Text); err != nil {
 					render.RenderStreamChunk(chunk)
 				}
 				fullResponse.WriteString(chunk.Text)
@@ -216,6 +217,14 @@ func runQuery(cmd *cobra.Command, args []string) error {
 			}
 		}
 		render.NewLine()
+
+		// Post-stream rendering of the full accumulated response (with new styling/markdown)
+		if fullResponse.Len() > 0 {
+			if err := render.RenderStyledResponse(fullResponse.String()); err != nil {
+				// If final styled rendering fails, the raw stream output is still there.
+				render.RenderError(fmt.Errorf("failed to render final response: %w", err))
+			}
+		}
 
 		// Render web results if any
 		if len(allWebResults) > 0 {
