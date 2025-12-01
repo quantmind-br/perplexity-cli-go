@@ -661,3 +661,76 @@ func TestRenderWebResultsWithMetaData(t *testing.T) {
 		t.Error("Output should contain URL")
 	}
 }
+
+func TestNormalizeMarkdownText(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "joins wrapped paragraph lines",
+			input: "This is a long sentence that was\nartificially broken by the API.",
+			want:  "This is a long sentence that was artificially broken by the API.",
+		},
+		{
+			name:  "preserves paragraph breaks",
+			input: "First paragraph.\n\nSecond paragraph.",
+			want:  "First paragraph.\n\nSecond paragraph.",
+		},
+		{
+			name:  "preserves headers",
+			input: "Some text.\n\n### Header\n\nMore text.",
+			want:  "Some text.\n\n### Header\n\nMore text.",
+		},
+		{
+			name:  "preserves bullet lists",
+			input: "List:\n\n• First item\n• Second item\n• Third item",
+			want:  "List:\n\n• First item\n• Second item\n• Third item",
+		},
+		{
+			name:  "preserves dash lists",
+			input: "List:\n\n- First item\n- Second item",
+			want:  "List:\n\n- First item\n- Second item",
+		},
+		{
+			name:  "preserves numbered lists",
+			input: "List:\n\n1. First item\n2. Second item",
+			want:  "List:\n\n1. First item\n2. Second item",
+		},
+		{
+			name:  "preserves tables",
+			input: "| Header 1 | Header 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |",
+			want:  "| Header 1 | Header 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |",
+		},
+		{
+			name:  "preserves code blocks",
+			input: "Code:\n\n```go\nfunc main() {\n    fmt.Println(\"hello\")\n}\n```",
+			want:  "Code:\n\n```go\nfunc main() {\n    fmt.Println(\"hello\")\n}\n```",
+		},
+		{
+			name:  "complex mixed content",
+			input: "A response with multiple\nlines that should be joined.\n\n### Section Header\n\n• List item one\n• List item two\n\nAnother paragraph that was\nbroken artificially.",
+			want:  "A response with multiple lines that should be joined.\n\n### Section Header\n\n• List item one\n• List item two\n\nAnother paragraph that was broken artificially.",
+		},
+		{
+			name:  "empty input",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "single line",
+			input: "Just one line.",
+			want:  "Just one line.",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeMarkdownText(tt.input)
+			if got != tt.want {
+				t.Errorf("normalizeMarkdownText() =\n%q\nwant:\n%q", got, tt.want)
+			}
+		})
+	}
+}

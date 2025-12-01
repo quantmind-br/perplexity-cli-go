@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/charmbracelet/glamour"
@@ -125,10 +126,14 @@ func (r *Renderer) RenderStyledResponse(content string) error {
 		fmt.Fprintln(r.out, content)
 		return nil
 	}
+
+	// Normalize text to remove artificial line breaks from API
+	normalizedContent := normalizeMarkdownText(content)
+
 	// 1. Render Markdown content internally using glamour
-	rendered, err := r.mdRender.Render(content)
+	rendered, err := r.mdRender.Render(normalizedContent)
 	if err != nil {
-		return r.RenderMarkdown(content) // Fallback to basic markdown render
+		return r.RenderMarkdown(normalizedContent) // Fallback to basic markdown render
 	}
 	// 2. Wrap the rendered content in the container style
 	styledContent := ResponseContainerStyle.
@@ -301,4 +306,78 @@ func (r *Renderer) ClearLine() {
 // NewLine prints a newline.
 func (r *Renderer) NewLine() {
 	fmt.Fprintln(r.out)
+}
+
+// normalizeMarkdownText removes artificial line breaks from API responses
+// while preserving markdown structure (headers, lists, tables, code blocks, paragraphs).
+func normalizeMarkdownText(text string) string {
+	// Patterns that indicate a line should NOT be joined with previous
+	structuralPatterns := regexp.MustCompile(`^(\s*(#{1,6}\s|[-*•]\s|\d+\.\s|\|)|` + "```)")
+
+	lines := strings.Split(text, "\n")
+	var result []string
+	var currentParagraph strings.Builder
+	inCodeBlock := false
+
+	flushParagraph := func() {
+		if currentParagraph.Len() > 0 {
+			result = append(result, strings.TrimSpace(currentParagraph.String()))
+			currentParagraph.Reset()
+		}
+	}
+
+	for i, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+
+		// Track code blocks
+		if strings.HasPrefix(trimmedLine, "```") {
+			flushParagraph()
+			inCodeBlock = !inCodeBlock
+			result = append(result, line)
+			continue
+		}
+
+		// Inside code block - preserve exactly
+		if inCodeBlock {
+			result = append(result, line)
+			continue
+		}
+
+		// Empty line = paragraph break
+		if trimmedLine == "" {
+			flushParagraph()
+			result = append(result, "")
+			continue
+		}
+
+		// Structural elements (headers, lists, tables) - preserve as separate lines
+		if structuralPatterns.MatchString(line) {
+			flushParagraph()
+			result = append(result, line)
+			continue
+		}
+
+		// Check if this line starts a new structural section
+		// (previous line was empty or structural)
+		if i > 0 {
+			prevTrimmed := strings.TrimSpace(lines[i-1])
+			prevIsStructural := prevTrimmed == "" || structuralPatterns.MatchString(lines[i-1])
+
+			if prevIsStructural {
+				// This is the start of a new paragraph
+				flushParagraph()
+			}
+		}
+
+		// Join with previous content in paragraph
+		if currentParagraph.Len() > 0 {
+			currentParagraph.WriteString(" ")
+		}
+		currentParagraph.WriteString(trimmedLine)
+	}
+
+	// Flush remaining paragraph
+	flushParagraph()
+
+	return strings.Join(result, "\n")
 }
