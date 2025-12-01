@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/diogo/perplexity-go/pkg/models"
@@ -147,6 +149,192 @@ func TestNewManager(t *testing.T) {
 	if mgr.v == nil {
 		t.Error("viper instance should not be nil")
 	}
+}
+
+func TestManager_Save(t *testing.T) {
+	// Create a temporary directory for config
+	tmpDir := t.TempDir()
+
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+
+	// Override the config file path to use temp dir
+	mgr.cfgDir = tmpDir
+	mgr.cfgFile = filepath.Join(tmpDir, "config.json")
+
+	cfg := &Config{
+		DefaultModel:    models.ModelGPT51,
+		DefaultMode:     models.ModePro,
+		DefaultLanguage: "en-US",
+		DefaultSources:  []models.Source{models.SourceWeb, models.SourceScholar},
+		Streaming:       true,
+		Incognito:       false,
+		CookieFile:      "/path/to/cookies.json",
+		HistoryFile:     "/path/to/history.jsonl",
+	}
+
+	// Save config
+	if err := mgr.Save(cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	// Verify file exists
+	if _, err := os.Stat(mgr.cfgFile); os.IsNotExist(err) {
+		t.Error("Config file was not created")
+	}
+
+	// Load and verify
+	loaded, err := mgr.Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if loaded.DefaultModel != cfg.DefaultModel {
+		t.Errorf("DefaultModel = %q, want %q", loaded.DefaultModel, cfg.DefaultModel)
+	}
+	if loaded.DefaultMode != cfg.DefaultMode {
+		t.Errorf("DefaultMode = %q, want %q", loaded.DefaultMode, cfg.DefaultMode)
+	}
+	if loaded.DefaultLanguage != cfg.DefaultLanguage {
+		t.Errorf("DefaultLanguage = %q, want %q", loaded.DefaultLanguage, cfg.DefaultLanguage)
+	}
+	if len(loaded.DefaultSources) != len(cfg.DefaultSources) {
+		t.Errorf("len(DefaultSources) = %d, want %d", len(loaded.DefaultSources), len(cfg.DefaultSources))
+	}
+	if loaded.Streaming != cfg.Streaming {
+		t.Errorf("Streaming = %v, want %v", loaded.Streaming, cfg.Streaming)
+	}
+	if loaded.Incognito != cfg.Incognito {
+		t.Errorf("Incognito = %v, want %v", loaded.Incognito, cfg.Incognito)
+	}
+}
+
+func TestManager_Save_CreateDirectory(t *testing.T) {
+	tmpDir := t.TempDir()
+	configDir := filepath.Join(tmpDir, "nested", "dir", ".perplexity-cli")
+
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+
+	mgr.cfgDir = configDir
+	mgr.cfgFile = filepath.Join(configDir, "config.json")
+
+	cfg := &Config{
+		DefaultModel:    models.ModelPplxPro,
+		DefaultMode:     models.ModeDefault,
+		DefaultLanguage: "en-US",
+		DefaultSources:  []models.Source{models.SourceWeb},
+	}
+
+	// Save should create the directory
+	if err := mgr.Save(cfg); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	// Verify directory was created
+	if _, err := os.Stat(configDir); os.IsNotExist(err) {
+		t.Error("Config directory was not created")
+	}
+}
+
+func TestManager_Load_InvalidConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configFile := filepath.Join(tmpDir, "invalid.json")
+
+	// Create invalid config
+	if err := os.WriteFile(configFile, []byte("invalid json {"), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+
+	mgr.cfgDir = tmpDir
+	mgr.cfgFile = configFile
+
+	// Load should return error or use defaults
+	_, err = mgr.Load()
+	if err == nil {
+		t.Error("Expected error for invalid config")
+	}
+}
+
+func TestManager_Validate(t *testing.T) {
+	mgr, err := NewManager()
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+
+	t.Run("valid config", func(t *testing.T) {
+		cfg := &Config{
+			DefaultModel:    models.ModelGPT51,
+			DefaultMode:     models.ModePro,
+			DefaultLanguage: "en-US",
+			DefaultSources:  []models.Source{models.SourceWeb},
+		}
+
+		if err := mgr.validate(cfg); err != nil {
+			t.Errorf("validate() error = %v", err)
+		}
+	})
+
+	t.Run("invalid model", func(t *testing.T) {
+		cfg := &Config{
+			DefaultModel:    "invalid-model",
+			DefaultMode:     models.ModePro,
+			DefaultLanguage: "en-US",
+			DefaultSources:  []models.Source{models.SourceWeb},
+		}
+
+		if err := mgr.validate(cfg); err == nil {
+			t.Error("Expected error for invalid model")
+		}
+	})
+
+	t.Run("invalid mode", func(t *testing.T) {
+		cfg := &Config{
+			DefaultModel:    models.ModelGPT51,
+			DefaultMode:     "invalid-mode",
+			DefaultLanguage: "en-US",
+			DefaultSources:  []models.Source{models.SourceWeb},
+		}
+
+		if err := mgr.validate(cfg); err == nil {
+			t.Error("Expected error for invalid mode")
+		}
+	})
+
+	t.Run("invalid language", func(t *testing.T) {
+		cfg := &Config{
+			DefaultModel:    models.ModelGPT51,
+			DefaultMode:     models.ModePro,
+			DefaultLanguage: "invalid_lang",
+			DefaultSources:  []models.Source{models.SourceWeb},
+		}
+
+		if err := mgr.validate(cfg); err == nil {
+			t.Error("Expected error for invalid language")
+		}
+	})
+
+	t.Run("invalid source", func(t *testing.T) {
+		cfg := &Config{
+			DefaultModel:    models.ModelGPT51,
+			DefaultMode:     models.ModePro,
+			DefaultLanguage: "en-US",
+			DefaultSources:  []models.Source{"invalid-source"},
+		}
+
+		if err := mgr.validate(cfg); err == nil {
+			t.Error("Expected error for invalid source")
+		}
+	})
 }
 
 func TestManagerGetPaths(t *testing.T) {

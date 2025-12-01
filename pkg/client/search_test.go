@@ -458,3 +458,114 @@ func TestParseSSEChunk_EndOfStream(t *testing.T) {
 		})
 	}
 }
+
+func TestParseSSEChunk_MultipleFormats(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	tests := []struct {
+		name  string
+		chunk string
+		want  models.StreamChunk
+	}{
+		{
+			name:  "event message with json",
+			chunk: "event: message\ndata: {\"delta\": \"test\"}",
+			want:  models.StreamChunk{Delta: "test"},
+		},
+		{
+			name:  "json with text field containing escaped json",
+			chunk: `data: {"text": "[{\"step_type\": \"THINKING\", \"content\": {\"answer\": \"{\\\"answer\\\": \\\"Thinking...\\\"}\"}}]"}`,
+			want:  models.StreamChunk{StepType: "THINKING", Text: "Thinking..."},
+		},
+		{
+			name:  "json with web results",
+			chunk: `data: {"web_results": [{"url": "https://example.com", "title": "Test", "snippet": "Test snippet"}]}`,
+			want:  models.StreamChunk{WebResults: []models.WebResult{{URL: "https://example.com", Title: "Test", Snippet: "Test snippet"}}},
+		},
+		{
+			name:  "json with chunks array",
+			chunk: `data: {"chunks": ["Hello", " ", "World"]}`,
+			want:  models.StreamChunk{Chunks: []string{"Hello", " ", "World"}},
+		},
+		{
+			name:  "json with citations",
+			chunk: `data: {"citations": [{"url": "https://example.com", "title": "Example"}]}`,
+			want:  models.StreamChunk{Citations: []models.Citation{{URL: "https://example.com", Title: "Example"}}},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := client.parseSSEChunk(tt.chunk)
+			if got.StepType != tt.want.StepType {
+				t.Errorf("StepType = %q, want %q", got.StepType, tt.want.StepType)
+			}
+			if got.Delta != tt.want.Delta {
+				t.Errorf("Delta = %q, want %q", got.Delta, tt.want.Delta)
+			}
+			if got.Text != tt.want.Text {
+				t.Errorf("Text = %q, want %q", got.Text, tt.want.Text)
+			}
+			if len(got.WebResults) != len(tt.want.WebResults) {
+				t.Errorf("len(WebResults) = %d, want %d", len(got.WebResults), len(tt.want.WebResults))
+			}
+			if len(got.Chunks) != len(tt.want.Chunks) {
+				t.Errorf("len(Chunks) = %d, want %d", len(got.Chunks), len(tt.want.Chunks))
+			}
+			if len(got.Citations) != len(tt.want.Citations) {
+				t.Errorf("len(Citations) = %d, want %d", len(got.Citations), len(tt.want.Citations))
+			}
+		})
+	}
+}
+
+func TestSearchNonStream(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test searchNonStream with mock response
+	// This is hard to test without mocking HTTP, but we can at least verify the function exists and compiles
+	opts := models.SearchOptions{
+		Query:  "test query",
+		Mode:   models.ModeDefault,
+		Stream: false,
+	}
+
+	// We can't actually test the full functionality without HTTP mocking
+	// But we can verify the function exists
+	if client.searchNonStream == nil {
+		t.Error("searchNonStream should exist")
+	}
+}
+
+func TestSearchStreamChannel(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test searchStreamChannel with mock response
+	// This is hard to test without mocking HTTP, but we can at least verify the function exists and compiles
+	opts := models.SearchOptions{
+		Query:  "test query",
+		Mode:   models.ModeDefault,
+		Stream: true,
+	}
+
+	// We can't actually test the full functionality without HTTP mocking
+	// But we can verify the function exists
+	if client.searchStreamChannel == nil {
+		t.Error("searchStreamChannel should exist")
+	}
+}

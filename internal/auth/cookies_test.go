@@ -293,3 +293,51 @@ func TestLoadCookiesFromNetscape(t *testing.T) {
 		t.Error("session cookie not found")
 	}
 }
+
+func TestLoadCookiesFromNetscape_Expired(t *testing.T) {
+	tmpDir := t.TempDir()
+	netscapeFile := filepath.Join(tmpDir, "cookies.txt")
+
+	// Expired cookie (timestamp 0 means session cookie, negative is expired)
+	netscapeContent := `# Netscape HTTP Cookie File
+.perplexity.ai	TRUE	/	FALSE	0	session	session_value
+.perplexity.ai	TRUE	/	FALSE	-1	expired	expired_value
+.example.com	TRUE	/	FALSE	1735689600	other	other_value
+`
+
+	if err := os.WriteFile(netscapeFile, []byte(netscapeContent), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	cookies, err := LoadCookiesFromNetscape(netscapeFile)
+	if err != nil {
+		t.Fatalf("LoadCookiesFromNetscape() error = %v", err)
+	}
+
+	// Session cookie (0) should be included, expired (-1) should not
+	if len(cookies) != 2 {
+		t.Errorf("len(cookies) = %d, want 2 (session cookie and valid cookie)", len(cookies))
+	}
+}
+
+func TestLoadCookiesFromNetscape_InvalidFormat(t *testing.T) {
+	tmpDir := t.TempDir()
+	netscapeFile := filepath.Join(tmpDir, "invalid.txt")
+
+	// Invalid format
+	invalidContent := `This is not a valid Netscape cookie file
+Invalid line
+`
+
+	if err := os.WriteFile(netscapeFile, []byte(invalidContent), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	cookies, err := LoadCookiesFromNetscape(netscapeFile)
+	if err != nil {
+		t.Fatalf("LoadCookiesFromNetscape() error = %v", err)
+	}
+
+	// Should not crash, may return 0 cookies or partial
+	_ = cookies // Just verify it doesn't panic
+}

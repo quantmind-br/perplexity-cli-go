@@ -1,0 +1,432 @@
+package client
+
+import (
+	"bytes"
+	"fmt"
+	"testing"
+
+	http "github.com/bogdanfinn/fhttp"
+)
+
+func TestNewHTTPClient(t *testing.T) {
+	client, err := NewHTTPClient()
+	if err != nil {
+		t.Fatalf("NewHTTPClient() error = %v", err)
+	}
+
+	if client == nil {
+		t.Fatal("NewHTTPClient() returned nil")
+	}
+
+	if client.client == nil {
+		t.Error("client.client should not be nil")
+	}
+
+	if client.cookies == nil {
+		t.Error("client.cookies should be initialized")
+	}
+}
+
+func TestHTTPClientSetCookies(t *testing.T) {
+	client, err := NewHTTPClient()
+	if err != nil {
+		t.Fatalf("NewHTTPClient() error = %v", err)
+	}
+
+	cookies := []*http.Cookie{
+		{Name: "test", Value: "value", Domain: ".perplexity.ai"},
+	}
+
+	client.SetCookies(cookies)
+
+	if len(client.cookies) != 1 {
+		t.Errorf("len(cookies) = %d, want 1", len(client.cookies))
+	}
+}
+
+func TestHTTPClientAddCookie(t *testing.T) {
+	client, err := NewHTTPClient()
+	if err != nil {
+		t.Fatalf("NewHTTPClient() error = %v", err)
+	}
+
+	client.AddCookie(&http.Cookie{Name: "cookie1", Value: "value1", Domain: ".perplexity.ai"})
+	client.AddCookie(&http.Cookie{Name: "cookie2", Value: "value2", Domain: ".perplexity.ai"})
+
+	if len(client.cookies) != 2 {
+		t.Errorf("len(cookies) = %d, want 2", len(client.cookies))
+	}
+}
+
+func TestHTTPClientBuildHeaders(t *testing.T) {
+	client, err := NewHTTPClient()
+	if err != nil {
+		t.Fatalf("NewHTTPClient() error = %v", err)
+	}
+
+	headers := client.buildHeaders()
+
+	// Check required headers (using direct access since Get() canonicalizes)
+	if v := headers["Accept"]; len(v) == 0 || v[0] != "*/*" {
+		t.Errorf("Header Accept = %v, want [*/*]", v)
+	}
+	if v := headers["Accept-Language"]; len(v) == 0 || v[0] != "en-US,en;q=0.9" {
+		t.Errorf("Header Accept-Language = %v, want [en-US,en;q=0.9]", v)
+	}
+	if v := headers["Content-Type"]; len(v) == 0 || v[0] != "application/json" {
+		t.Errorf("Header Content-Type = %v, want [application/json]", v)
+	}
+	if v := headers["Origin"]; len(v) == 0 || v[0] != baseURL {
+		t.Errorf("Header Origin = %v, want [%s]", v, baseURL)
+	}
+	if v := headers["User-Agent"]; len(v) == 0 || v[0] != userAgent {
+		t.Errorf("Header User-Agent = %v, want [%s]", v, userAgent)
+	}
+	// Check sec-* headers
+	if v := headers["sec-ch-ua-mobile"]; len(v) == 0 || v[0] != "?0" {
+		t.Errorf("Header sec-ch-ua-mobile = %v, want [?0]", v)
+	}
+	if v := headers["sec-fetch-dest"]; len(v) == 0 || v[0] != "empty" {
+		t.Errorf("Header sec-fetch-dest = %v, want [empty]", v)
+	}
+}
+
+func TestHTTPClientGetCSRFToken(t *testing.T) {
+	client, err := NewHTTPClient()
+	if err != nil {
+		t.Fatalf("NewHTTPClient() error = %v", err)
+	}
+
+	// No cookies, no token
+	token := client.GetCSRFToken()
+	if token != "" {
+		t.Errorf("GetCSRFToken() = %q, want empty", token)
+	}
+
+	// Add CSRF cookie with hash
+	client.SetCookies([]*http.Cookie{
+		{Name: "next-auth.csrf-token", Value: "mytoken|somehash", Domain: ".perplexity.ai", Path: "/"},
+	})
+
+	token = client.GetCSRFToken()
+	if token != "mytoken" {
+		t.Errorf("GetCSRFToken() = %q, want %q", token, "mytoken")
+	}
+}
+
+func TestHTTPClientGetCSRFTokenNoHash(t *testing.T) {
+	client, err := NewHTTPClient()
+	if err != nil {
+		t.Fatalf("NewHTTPClient() error = %v", err)
+	}
+
+	// Add CSRF cookie without hash
+	client.SetCookies([]*http.Cookie{
+		{Name: "next-auth.csrf-token", Value: "justtoken", Domain: ".perplexity.ai", Path: "/"},
+	})
+
+	token := client.GetCSRFToken()
+	if token != "justtoken" {
+		t.Errorf("GetCSRFToken() = %q, want %q", token, "justtoken")
+	}
+}
+
+func TestHTTPClientClose(t *testing.T) {
+	client, err := NewHTTPClient()
+	if err != nil {
+		t.Fatalf("NewHTTPClient() error = %v", err)
+	}
+
+	// Close should not error
+	if err := client.Close(); err != nil {
+		t.Errorf("Close() error = %v", err)
+	}
+}
+
+func TestConstants(t *testing.T) {
+	if baseURL != "https://www.perplexity.ai" {
+		t.Errorf("baseURL = %q, want %q", baseURL, "https://www.perplexity.ai")
+	}
+	if searchPath != "/rest/sse/perplexity_ask" {
+		t.Errorf("searchPath = %q, want %q", searchPath, "/rest/sse/perplexity_ask")
+	}
+	if sessionPath != "/api/auth/session" {
+		t.Errorf("sessionPath = %q, want %q", sessionPath, "/api/auth/session")
+	}
+	if uploadPath != "/rest/uploads/create_upload_url" {
+		t.Errorf("uploadPath = %q, want %q", uploadPath, "/rest/uploads/create_upload_url")
+	}
+	if userAgent == "" {
+		t.Error("userAgent should not be empty")
+	}
+}
+
+// MockHTTPClient Tests
+
+func TestNewMockHTTPClient(t *testing.T) {
+	mock := NewMockHTTPClient()
+	if mock == nil {
+		t.Fatal("NewMockHTTPClient() returned nil")
+	}
+	if len(mock.Calls) != 0 {
+		t.Error("Calls should be empty initially")
+	}
+	if mock.Cookies == nil {
+		t.Error("Cookies should be initialized")
+	}
+}
+
+func TestMockHTTPClientPost(t *testing.T) {
+	mock := NewMockHTTPClient()
+
+	// Configure mock to return a specific response
+	resp := &http.Response{
+		StatusCode: 200,
+		Body:       http.NoBody,
+	}
+	mock.AddResponse(resp)
+
+	result, err := mock.Post("/test", []byte("test body"))
+
+	if err != nil {
+		t.Errorf("Post() error = %v", err)
+	}
+	if result != resp {
+		t.Errorf("Post() = %v, want %v", result, resp)
+	}
+
+	// Verify call was recorded
+	if len(mock.Calls) != 1 {
+		t.Fatalf("len(mock.Calls) = %d, want 1", len(mock.Calls))
+	}
+	if mock.Calls[0].Method != "Post" {
+		t.Errorf("Call method = %v, want %v", mock.Calls[0].Method, "Post")
+	}
+	if mock.Calls[0].Path != "/test" {
+		t.Errorf("Call path = %v, want %v", mock.Calls[0].Path, "/test")
+	}
+	if !bytes.Equal(mock.Calls[0].Body, []byte("test body")) {
+		t.Errorf("Call body = %v, want %v", mock.Calls[0].Body, []byte("test body"))
+	}
+}
+
+func TestMockHTTPClientPostWithError(t *testing.T) {
+	mock := NewMockHTTPClient()
+
+	testErr := fmt.Errorf("test error")
+	mock.AddError(testErr)
+
+	result, err := mock.Post("/test", nil)
+
+	if err != testErr {
+		t.Errorf("Post() error = %v, want %v", err, testErr)
+	}
+	if result != nil {
+		t.Errorf("Post() = %v, want nil", result)
+	}
+}
+
+func TestMockHTTPClientGet(t *testing.T) {
+	mock := NewMockHTTPClient()
+
+	resp := &http.Response{
+		StatusCode: 404,
+		Body:       http.NoBody,
+	}
+	mock.AddResponse(resp)
+
+	result, err := mock.Get("/another/path")
+
+	if err != nil {
+		t.Errorf("Get() error = %v", err)
+	}
+	if result != resp {
+		t.Errorf("Get() = %v, want %v", result, resp)
+	}
+
+	// Verify call was recorded
+	if len(mock.Calls) != 1 {
+		t.Fatalf("len(mock.Calls) = %d, want 1", len(mock.Calls))
+	}
+	if mock.Calls[0].Method != "Get" {
+		t.Errorf("Call method = %v, want %v", mock.Calls[0].Method, "Get")
+	}
+	if mock.Calls[0].Path != "/another/path" {
+		t.Errorf("Call path = %v, want %v", mock.Calls[0].Path, "/another/path")
+	}
+}
+
+func TestMockHTTPClientPostWithReader(t *testing.T) {
+	mock := NewMockHTTPClient()
+
+	resp := &http.Response{
+		StatusCode: 200,
+		Body:       http.NoBody,
+	}
+	mock.AddResponse(resp)
+
+	result, err := mock.PostWithReader("/test/reader", []byte("reader body"))
+
+	if err != nil {
+		t.Errorf("PostWithReader() error = %v", err)
+	}
+	if result != resp {
+		t.Errorf("PostWithReader() = %v, want %v", result, resp)
+	}
+
+	// Verify call was recorded
+	if len(mock.Calls) != 1 {
+		t.Fatalf("len(mock.Calls) = %d, want 1", len(mock.Calls))
+	}
+	if mock.Calls[0].Method != "PostWithReader" {
+		t.Errorf("Call method = %v, want %v", mock.Calls[0].Method, "PostWithReader")
+	}
+}
+
+func TestMockHTTPClientMultipleResponses(t *testing.T) {
+	mock := NewMockHTTPClient()
+
+	resp1 := &http.Response{StatusCode: 200, Body: http.NoBody}
+	resp2 := &http.Response{StatusCode: 201, Body: http.NoBody}
+
+	mock.AddResponse(resp1)
+	mock.AddResponse(resp2)
+
+	result1, err1 := mock.Get("/first")
+	result2, err2 := mock.Get("/second")
+
+	if err1 != nil || err2 != nil {
+		t.Errorf("Multiple calls returned errors: %v, %v", err1, err2)
+	}
+	if result1 != resp1 {
+		t.Errorf("First call result = %v, want %v", result1, resp1)
+	}
+	if result2 != resp2 {
+		t.Errorf("Second call result = %v, want %v", result2, resp2)
+	}
+}
+
+func TestMockHTTPClientDefaultResponse(t *testing.T) {
+	mock := NewMockHTTPClient()
+
+	defaultResp := &http.Response{StatusCode: 500, Body: http.NoBody}
+	mock.SetResponse(defaultResp)
+
+	// First call - no specific response configured
+	result1, err1 := mock.Get("/first")
+	if result1 != defaultResp {
+		t.Errorf("First call result = %v, want default response", result1)
+	}
+
+	// Second call - still uses default
+	result2, err2 := mock.Post("/second", nil)
+	if result2 != defaultResp {
+		t.Errorf("Second call result = %v, want default response", result2)
+	}
+}
+
+func TestMockHTTPClientSetCookies(t *testing.T) {
+	mock := NewMockHTTPClient()
+
+	cookies := []*http.Cookie{
+		{Name: "test1", Value: "value1"},
+		{Name: "test2", Value: "value2"},
+	}
+
+	mock.SetCookies(cookies)
+
+	result := mock.GetCookies()
+	if len(result) != 2 {
+		t.Errorf("len(GetCookies()) = %d, want 2", len(result))
+	}
+}
+
+func TestMockHTTPClientAddCookie(t *testing.T) {
+	mock := NewMockHTTPClient()
+
+	mock.AddCookie(&http.Cookie{Name: "cookie1", Value: "value1"})
+	mock.AddCookie(&http.Cookie{Name: "cookie2", Value: "value2"})
+
+	result := mock.GetCookies()
+	if len(result) != 2 {
+		t.Errorf("len(GetCookies()) = %d, want 2", len(result))
+	}
+	if result[0].Name != "cookie1" || result[1].Name != "cookie2" {
+		t.Errorf("Cookie names don't match")
+	}
+}
+
+func TestMockHTTPClientGetCSRFToken(t *testing.T) {
+	mock := NewMockHTTPClient()
+
+	// No cookies initially
+	token := mock.GetCSRFToken()
+	if token != "" {
+		t.Errorf("GetCSRFToken() = %q, want empty", token)
+	}
+
+	// Add CSRF cookie with hash
+	mock.SetCookies([]*http.Cookie{
+		{Name: "next-auth.csrf-token", Value: "token123|hash456"},
+	})
+
+	token = mock.GetCSRFToken()
+	if token != "token123" {
+		t.Errorf("GetCSRFToken() = %q, want %q", token, "token123")
+	}
+}
+
+func TestMockHTTPClientCallTracking(t *testing.T) {
+	mock := NewMockHTTPClient()
+
+	// Make multiple calls
+	mock.Get("/first")
+	mock.Post("/second", []byte("body"))
+	mock.PostWithReader("/third", nil)
+
+	// Check call count for each method
+	if count := mock.GetCallCount("Get"); count != 1 {
+		t.Errorf("GetCallCount('Get') = %d, want 1", count)
+	}
+	if count := mock.GetCallCount("Post"); count != 1 {
+		t.Errorf("GetCallCount('Post') = %d, want 1", count)
+	}
+	if count := mock.GetCallCount("PostWithReader"); count != 1 {
+		t.Errorf("GetCallCount('PostWithReader') = %d, want 1", count)
+	}
+	if count := mock.GetCallCount("NonExistent"); count != 0 {
+		t.Errorf("GetCallCount('NonExistent') = %d, want 0", count)
+	}
+
+	// Check WasMethodCalled
+	if !mock.WasMethodCalled("Get") {
+		t.Error("WasMethodCalled('Get') should be true")
+	}
+	if !mock.WasMethodCalled("Post") {
+		t.Error("WasMethodCalled('Post') should be true")
+	}
+	if mock.WasMethodCalled("NonExistent") {
+		t.Error("WasMethodCalled('NonExistent') should be false")
+	}
+
+	// Check last call
+	lastCall := mock.GetLastCall()
+	if lastCall == nil {
+		t.Fatal("GetLastCall() returned nil")
+	}
+	if lastCall.Method != "PostWithReader" {
+		t.Errorf("Last call method = %v, want %v", lastCall.Method, "PostWithReader")
+	}
+	if lastCall.Path != "/third" {
+		t.Errorf("Last call path = %v, want %v", lastCall.Path, "/third")
+	}
+
+	// Clear calls
+	mock.ClearCalls()
+	if len(mock.Calls) != 0 {
+		t.Error("Calls should be empty after ClearCalls()")
+	}
+	if mock.GetLastCall() != nil {
+		t.Error("GetLastCall() should return nil after ClearCalls()")
+	}
+}

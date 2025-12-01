@@ -275,3 +275,101 @@ func TestContainsIgnoreCase(t *testing.T) {
 		}
 	}
 }
+
+func TestWriterAppend_Unicode(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "history.jsonl")
+
+	w, err := NewWriter(path)
+	if err != nil {
+		t.Fatalf("NewWriter() error = %v", err)
+	}
+
+	entry := models.HistoryEntry{
+		Query:    "こんにちは世界 🌍 café naïve résumé",
+		Mode:     "default",
+		Model:    "pplx_pro",
+		Response: "Unicode response: αβγδε",
+	}
+
+	if err := w.Append(entry); err != nil {
+		t.Fatalf("Append() error = %v", err)
+	}
+
+	reader := NewReader(path)
+	entries, err := reader.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+
+	if len(entries) != 1 {
+		t.Fatalf("len(entries) = %d, want 1", len(entries))
+	}
+
+	if entries[0].Query != entry.Query {
+		t.Errorf("Query = %q, want %q", entries[0].Query, entry.Query)
+	}
+}
+
+func TestReaderReadAll_InvalidJSON(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "history.jsonl")
+
+	// Write invalid JSON
+	content := `{"query": "valid"}
+invalid json line
+{"query": "also valid"}`
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	reader := NewReader(path)
+	entries, err := reader.ReadAll()
+	// Should skip invalid lines and return valid entries
+	if err != nil {
+		t.Errorf("ReadAll() should skip invalid lines, got error: %v", err)
+	}
+	// Should have 2 valid entries
+	if len(entries) != 2 {
+		t.Errorf("len(entries) = %d, want 2 (skipped invalid line)", len(entries))
+	}
+}
+
+func TestReaderReadLast_Zero(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "history.jsonl")
+
+	w, _ := NewWriter(path)
+	w.Append(models.HistoryEntry{Query: "test1"})
+	w.Append(models.HistoryEntry{Query: "test2"})
+
+	reader := NewReader(path)
+	// Zero should return empty slice
+	entries, err := reader.ReadLast(0)
+	if err != nil {
+		t.Fatalf("ReadLast() error = %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("len(entries) = %d, want 0", len(entries))
+	}
+}
+
+func TestReaderSearch_Empty(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "history.jsonl")
+
+	// Create empty file
+	if err := os.WriteFile(path, []byte(""), 0644); err != nil {
+		t.Fatalf("Failed to write test file: %v", err)
+	}
+
+	reader := NewReader(path)
+	entries, err := reader.Search("test")
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+
+	if len(entries) != 0 {
+		t.Errorf("len(entries) = %d, want 0", len(entries))
+	}
+}
