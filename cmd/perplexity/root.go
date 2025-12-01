@@ -217,6 +217,7 @@ func runQuery(cmd *cobra.Command, args []string) error {
 
 		var fullResponse strings.Builder
 		var allWebResults []models.WebResult
+		var renderedFinal bool // Track if we already rendered a FINAL response
 		for chunk := range ch {
 			if chunk.Error != nil { // Handle all chunk errors
 				if chunk.Error == context.Canceled {
@@ -237,6 +238,7 @@ func runQuery(cmd *cobra.Command, args []string) error {
 				}
 				fullResponse.WriteString(chunk.Text)
 				allWebResults = append(allWebResults, chunk.WebResults...)
+				renderedFinal = true
 			} else if chunk.StepType == "" {
 				// Legacy format - render as stream
 				render.RenderStreamChunk(chunk)
@@ -249,8 +251,9 @@ func runQuery(cmd *cobra.Command, args []string) error {
 		}
 		render.NewLine()
 
-		// Post-stream rendering of the full accumulated response (with new styling/markdown)
-		if fullResponse.Len() > 0 {
+		// Post-stream rendering only for legacy format (token-by-token streaming)
+		// Skip if we already rendered a FINAL step response
+		if fullResponse.Len() > 0 && !renderedFinal {
 			if err := render.RenderStyledResponse(fullResponse.String()); err != nil {
 				// If final styled rendering fails, the raw stream output is still there.
 				render.RenderError(fmt.Errorf("failed to render final response: %w", err))
