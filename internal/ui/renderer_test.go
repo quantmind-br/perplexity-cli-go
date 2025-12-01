@@ -329,3 +329,335 @@ func TestSpinnerChars(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderWebResultsEmpty(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Test with nil slice
+	r.RenderWebResults(nil)
+	if buf.String() != "" {
+		t.Error("Nil results should produce no output")
+	}
+
+	// Test with empty slice
+	buf.Reset()
+	r.RenderWebResults([]models.WebResult{})
+	if buf.String() != "" {
+		t.Error("Empty results should produce no output")
+	}
+}
+
+func TestRenderWebResultsFiltered(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Test with only internal results (should be filtered out)
+	results := []models.WebResult{
+		{URL: "https://perplexity.ai"},
+		{URL: ""},
+	}
+
+	r.RenderWebResults(results)
+	if buf.String() != "" {
+		t.Error("Only internal results should be filtered out")
+	}
+}
+
+func TestRenderWebResultsWithTitle(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	results := []models.WebResult{
+		{Title: "Example Article", URL: "https://example.com/article"},
+		{Title: "Another Article", URL: "https://example.com/another"},
+	}
+
+	r.RenderWebResults(results)
+
+	output := buf.String()
+	if !strings.Contains(output, "Sources:") {
+		t.Error("Output should contain 'Sources:' header")
+	}
+	if !strings.Contains(output, "[1]") {
+		t.Error("Output should contain citation number [1]")
+	}
+	if !strings.Contains(output, "[2]") {
+		t.Error("Output should contain citation number [2]")
+	}
+	if !strings.Contains(output, "Example Article") {
+		t.Error("Output should contain first article title")
+	}
+	if !strings.Contains(output, "https://example.com/article") {
+		t.Error("Output should contain first article URL")
+	}
+	if !strings.Contains(output, "Another Article") {
+		t.Error("Output should contain second article title")
+	}
+}
+
+func TestRenderWebResultsWithName(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Test with Name field (fallback when Title is empty)
+	results := []models.WebResult{
+		{Name: "Example Site", URL: "https://example.com"},
+	}
+
+	r.RenderWebResults(results)
+
+	output := buf.String()
+	if !strings.Contains(output, "Example Site") {
+		t.Error("Output should contain site name")
+	}
+}
+
+func TestRenderWebResultsURLOnly(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Test with only URL (when both Title and Name are empty)
+	results := []models.WebResult{
+		{URL: "https://example.com/page"},
+	}
+
+	r.RenderWebResults(results)
+
+	output := buf.String()
+	if !strings.Contains(output, "https://example.com/page") {
+		t.Error("Output should contain URL when no title or name")
+	}
+}
+
+func TestRenderWebResultsMixed(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Test with mixed result types
+	results := []models.WebResult{
+		{Title: "Valid Article", URL: "https://example.com/article1"},
+		{URL: "https://perplexity.ai"},                   // Should be filtered
+		{Name: "Named Site", URL: "https://example.com"},  // Has name
+		{URL: "https://example.com/page"},                 // URL only
+		{URL: ""},                                         // Empty URL, should be filtered
+	}
+
+	r.RenderWebResults(results)
+
+	output := buf.String()
+	// Should have 3 sources (not 5, because 2 are filtered)
+	sourceCount := strings.Count(output, "[")
+	if sourceCount != 3 {
+		t.Errorf("Expected 3 sources, got %d", sourceCount)
+	}
+	if !strings.Contains(output, "Valid Article") {
+		t.Error("Output should contain valid article title")
+	}
+	if !strings.Contains(output, "Named Site") {
+		t.Error("Output should contain named site")
+	}
+	if !strings.Contains(output, "https://example.com/page") {
+		t.Error("Output should contain URL-only result")
+	}
+	if strings.Contains(output, "https://perplexity.ai") {
+		t.Error("Output should not contain filtered internal URL")
+	}
+}
+
+func TestRenderWebResultsURLAsTitle(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Test when URL should be displayed (when it differs from title)
+	results := []models.WebResult{
+		{Title: "Example Site", URL: "https://example.com/different-path"},
+	}
+
+	r.RenderWebResults(results)
+
+	output := buf.String()
+	if !strings.Contains(output, "Example Site") {
+		t.Error("Output should contain title")
+	}
+	if !strings.Contains(output, "https://example.com/different-path") {
+		t.Error("Output should contain URL when different from title")
+	}
+}
+
+func TestRenderWebResultsSpecialCharacters(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Test with special characters in title and URL
+	results := []models.WebResult{
+		{Title: "Article with <tags> & \"quotes\"", URL: "https://example.com/path?query=value&other=test"},
+	}
+
+	r.RenderWebResults(results)
+
+	output := buf.String()
+	if !strings.Contains(output, "Article with") {
+		t.Error("Output should contain title with special characters")
+	}
+	if !strings.Contains(output, "https://example.com") {
+		t.Error("Output should contain URL with query parameters")
+	}
+}
+
+func TestRenderMarkdownNilRenderer(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Force mdRender to nil (simulating error in constructor)
+	r.mdRender = nil
+
+	err := r.RenderMarkdown("# Test")
+	if err != nil {
+		t.Fatalf("RenderMarkdown() error = %v", err)
+	}
+
+	output := buf.String()
+	if output != "# Test\n" {
+		t.Errorf("Output = %q, want %q", output, "# Test\n")
+	}
+}
+
+func TestRenderMarkdownRenderError(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// This should fallback to raw content on error
+	// (Glamour typically doesn't return errors, but the fallback is tested)
+	err := r.RenderMarkdown("some text")
+	if err != nil {
+		t.Fatalf("RenderMarkdown() error = %v", err)
+	}
+
+	output := buf.String()
+	if output == "" {
+		t.Error("Output should not be empty even on error")
+	}
+}
+
+func TestRenderStyledResponseNilRenderer(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Force mdRender to nil
+	r.mdRender = nil
+
+	err := r.RenderStyledResponse("# Test Response")
+	if err != nil {
+		t.Fatalf("RenderStyledResponse() error = %v", err)
+	}
+
+	output := buf.String()
+	if output != "# Test Response\n" {
+		t.Errorf("Output = %q, want %q", output, "# Test Response\n")
+	}
+}
+
+func TestRenderStyledResponseWithMarkdown(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	err := r.RenderStyledResponse("# Test Response\n\n**Bold text**")
+	if err != nil {
+		t.Fatalf("RenderStyledResponse() error = %v", err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "Test Response") {
+		t.Error("Output should contain response content")
+	}
+}
+
+func TestRenderWebResultsNewsFormat(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Test with news-style results
+	results := []models.WebResult{
+		{Title: "Breaking News", URL: "https://news.example.com/article1", Snippet: "Latest update..."},
+		{Title: "Another News", URL: "https://news.example.com/article2", Snippet: "More updates..."},
+	}
+
+	r.RenderWebResults(results)
+
+	output := buf.String()
+	if !strings.Contains(output, "Breaking News") {
+		t.Error("Output should contain news title")
+	}
+	if !strings.Contains(output, "[1]") {
+		t.Error("Output should contain citation number")
+	}
+}
+
+func TestRenderWebResultsAcademicFormat(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Test with academic paper style results
+	results := []models.WebResult{
+		{Title: "Deep Learning Research Paper", URL: "https://arxiv.org/abs/2024.12345"},
+		{Title: "AI Ethics Study", URL: "https://scholar.google.com/study"},
+	}
+
+	r.RenderWebResults(results)
+
+	output := buf.String()
+	if !strings.Contains(output, "Deep Learning Research Paper") {
+		t.Error("Output should contain academic paper title")
+	}
+	if !strings.Contains(output, "https://arxiv.org/abs/2024.12345") {
+		t.Error("Output should contain arxiv URL")
+	}
+}
+
+func TestRenderWebResultsLongTitle(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Test with very long title
+	longTitle := "This is a very long article title that might need special handling " +
+		"because it contains many words and could potentially cause issues with " +
+		"terminal rendering or text wrapping"
+	results := []models.WebResult{
+		{Title: longTitle, URL: "https://example.com/long"},
+	}
+
+	r.RenderWebResults(results)
+
+	output := buf.String()
+	if !strings.Contains(output, "This is a very long article title") {
+		t.Error("Output should contain long title")
+	}
+	if !strings.Contains(output, "https://example.com/long") {
+		t.Error("Output should contain URL")
+	}
+}
+
+func TestRenderWebResultsWithMetaData(t *testing.T) {
+	var buf bytes.Buffer
+	r, _ := NewRendererWithOptions(&buf, 80, false)
+
+	// Test with metadata (should not affect rendering)
+	results := []models.WebResult{
+		{
+			Title:    "Article with Metadata",
+			URL:      "https://example.com/article",
+			MetaData: map[string]interface{}{"author": "John Doe", "date": "2024-01-01"},
+		},
+	}
+
+	r.RenderWebResults(results)
+
+	output := buf.String()
+	if !strings.Contains(output, "Article with Metadata") {
+		t.Error("Output should contain title")
+	}
+	if !strings.Contains(output, "https://example.com/article") {
+		t.Error("Output should contain URL")
+	}
+}

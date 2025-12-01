@@ -14,6 +14,7 @@ var cookiesCmd = &cobra.Command{
 	Long:  `Manage authentication cookies for Perplexity API access.`,
 }
 
+// importCookiesCmd is a root-level command for importing cookies.
 var importCookiesCmd = &cobra.Command{
 	Use:   "import-cookies <file>",
 	Short: "Import cookies from file",
@@ -142,4 +143,6 @@ func init() {
 	cookiesCmd.AddCommand(cookiesStatusCmd)
 	cookiesCmd.AddCommand(cookiesClearCmd)
 	cookiesCmd.AddCommand(cookiesPathCmd)
+
+	// NOTE: importCookiesCmd is added to the rootCmd in root.go
 }
