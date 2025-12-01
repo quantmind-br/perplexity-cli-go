@@ -147,7 +147,7 @@ func (c *Client) searchStreamChannel(ctx context.Context, opts models.SearchOpti
 	go func() {
 		defer close(ch)
 
-		resp, err := c.http.Post(searchPath, payload)
+		resp, err := c.http.Post(searchPath, bytes.NewReader(payload), nil)
 		if err != nil {
 			ch <- models.StreamChunk{Error: fmt.Errorf("request failed: %w", err)}
 			return

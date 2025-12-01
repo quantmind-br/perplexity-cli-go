@@ -2,10 +2,8 @@
 package client
 
 import (
-	"bytes"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 
 	http "github.com/bogdanfinn/fhttp"
@@ -86,6 +84,15 @@ func cookiesMapToSlice(cookies map[string]string) []*http.Cookie {
 		})
 	}
 	return cookieSlice
+}
+
+// cookiesSliceToMap converts a slice of http.Cookie to a map.
+func cookiesSliceToMap(cookies []*http.Cookie) map[string]string {
+	cookieMap := make(map[string]string, len(cookies))
+	for _, cookie := range cookies {
+		cookieMap[cookie.Name] = cookie.Value
+	}
+	return cookieMap
 }
 
 // buildHeaders returns common headers for Perplexity API requests.
@@ -292,10 +299,15 @@ func (m *MockHTTPClient) SetCookies(cookies map[string]string) {
 // GetCSRFToken returns CSRF token from cookies for testing.
 // Implements HTTPClientInterface.
 func (m *MockHTTPClient) GetCSRFToken() string {
-	if token, ok := m.Cookies["next-auth.csrf-token"] {
-		return token
+	if m.Cookies == nil {
+		return ""
 	}
-	return ""
+	cookieName := "next-auth.csrf-token"
+	token, ok := m.Cookies[cookieName]
+	if !ok {
+		return ""
+	}
+	return token
 }
 
 // Close closes the mock client for testing.

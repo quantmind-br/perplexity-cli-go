@@ -42,7 +42,7 @@ func (c *Client) UploadBytes(data []byte, filename, contentType string) (string,
 		return "", fmt.Errorf("failed to marshal upload request: %w", err)
 	}
 
-	resp, err := c.http.Post(uploadPath, reqBody)
+	resp, err := c.http.Post(uploadPath, bytes.NewReader(reqBody), nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to request upload URL: %w", err)
 	}

@@ -1,0 +1,935 @@
+package client
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"strings"
+	"testing"
+
+	http "github.com/bogdanfinn/fhttp"
+	"github.com/diogo/perplexity-go/pkg/models"
+)
+
+// testHTTPClient mimics HTTPClient but allows mocking the Post method
+type testHTTPClient struct {
+	client tls_client.HttpClient
+	cookies []*http.Cookie
+
+	MockResponse *http.Response
+	MockError    error
+}
+
+func (t *testHTTPClient) Post(path string, body []byte) (*http.Response, error) {
+	if t.MockError != nil {
+		return nil, t.MockError
+	}
+	return t.MockResponse, nil
+}
+
+func (t *testHTTPClient) Get(path string) (*http.Response, error) {
+	return nil, nil
+}
+
+func (t *testHTTPClient) PostWithReader(path string, body []byte) (*http.Response, error) {
+	return nil, nil
+}
+
+func (t *testHTTPClient) buildHeaders() http.Header {
+	return http.Header{
+		"Accept":             {"*/*"},
+		"Accept-Language":    {"en-US,en;q=0.9"},
+		"Content-Type":       {"application/json"},
+		"Origin":             {"https://www.perplexity.ai"},
+		"User-Agent":         {"Mozilla/5.0"},
+	}
+}
+
+func (t *testHTTPClient) GetCSRFToken() string {
+	return ""
+}
+
+func (t *testHTTPClient) SetCookies(cookies []*http.Cookie) {
+	t.cookies = cookies
+}
+
+func (t *testHTTPClient) AddCookie(cookie *http.Cookie) {
+	t.cookies = append(t.cookies, cookie)
+}
+
+func (t *testHTTPClient) GetCookies() []*http.Cookie {
+	return t.cookies
+}
+
+func (t *testHTTPClient) Close() error {
+	return nil
+}
+
+func TestSearchStreamChannel(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Create test HTTP client with mock
+	testHTTP := &testHTTPClient{
+		HTTPClient: client.http,
+	}
+
+	// Create SSE response
+	sseData := `event: message
+data: {"text": "Hello", "backend_uuid": "test-uuid-123"}
+
+event: message
+data: {"delta": " World"}
+
+event: message
+data: [DONE]`
+
+	response := &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader(sseData)),
+		Header:     http.Header{"Content-Type": {"text/event-stream"}},
+	}
+
+	testHTTP.MockResponse = response
+	client.http = testHTTP
+
+	// Test streaming channel
+	ctx := context.Background()
+	ch, err := client.searchStreamChannel(ctx, models.SearchOptions{
+		Query: "test query",
+	})
+	if err != nil {
+		t.Fatalf("searchStreamChannel() error = %v", err)
+	}
+
+	// Collect chunks
+	chunksReceived := 0
+	for chunk := range ch {
+		chunksReceived++
+		if chunk.Error != nil {
+			t.Errorf("Unexpected error in chunk: %v", chunk.Error)
+		}
+		if chunk.Done {
+			break
+		}
+	}
+
+	if chunksReceived == 0 {
+		t.Error("Expected to receive at least one chunk")
+	}
+}
+
+func TestSearchStreamChannel_ErrorResponse(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	testHTTP := &testHTTPClient{
+		HTTPClient: client.http,
+		MockError:  fmt.Errorf("network error"),
+	}
+	client.http = testHTTP
+
+	ctx := context.Background()
+	ch, err := client.searchStreamChannel(ctx, models.SearchOptions{
+		Query: "test query",
+	})
+	if err != nil {
+		t.Fatalf("searchStreamChannel() error = %v", err)
+	}
+
+	// Should receive error chunk
+	chunk := <-ch
+	if chunk.Error == nil {
+		t.Error("Expected error chunk")
+	}
+}
+
+func TestSearchStreamChannel_Non200Status(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Simulate non-200 status
+	response := &http.Response{
+		StatusCode: 401,
+		Body:       io.NopCloser(strings.NewReader("Unauthorized")),
+	}
+	testHTTP := &testHTTPClient{
+		HTTPClient:  client.http,
+		MockResponse: response,
+	}
+	client.http = testHTTP
+
+	ctx := context.Background()
+	ch, err := client.searchStreamChannel(ctx, models.SearchOptions{
+		Query: "test query",
+	})
+	if err != nil {
+		t.Fatalf("searchStreamChannel() error = %v", err)
+	}
+
+	// Should receive error chunk
+	chunk := <-ch
+	if chunk.Error == nil {
+		t.Error("Expected error chunk for non-200 status")
+	}
+}
+
+func TestSearchStreamChannel_ContextCancelled(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Create SSE response with delay
+	sseData := `event: message
+data: {"text": "Hello"}
+
+event: message
+data: [DONE]`
+
+	response := &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader(sseData)),
+	}
+	testHTTP := &testHTTPClient{
+		HTTPClient:  client.http,
+		MockResponse: response,
+	}
+	client.http = testHTTP
+
+	// Create cancellable context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	ch, err := client.searchStreamChannel(ctx, models.SearchOptions{
+		Query: "test query",
+	})
+	if err != nil {
+		t.Fatalf("searchStreamChannel() error = %v", err)
+	}
+
+	// Should receive error chunk for cancelled context
+	chunk := <-ch
+	if chunk.Error == nil {
+		t.Error("Expected error chunk for cancelled context")
+	}
+}
+
+func TestSearchStream(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Create step-based SSE response
+	sseData := `event: message
+data: [{"step_type": "INITIAL_QUERY", "content": {"query": "test"}, "uuid": ""}]
+event: message
+data: [{"step_type": "SEARCH_RESULTS", "content": {"web_results": []}, "uuid": ""}]
+event: message
+data: [{"step_type": "FINAL", "content": {"answer": "{\"answer\": \"Streaming answer\", \"web_results\": [], \"chunks\": [], \"extra_web_results\": [], \"structured_answer\": []}"}, "uuid": "test-uuid"}]
+event: message
+data: [DONE]`
+
+	response := &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader(sseData)),
+	}
+	testHTTP := &testHTTPClient{
+		HTTPClient:  client.http,
+		MockResponse: response,
+	}
+	client.http = testHTTP
+
+	ctx := context.Background()
+	result, err := client.searchStream(ctx, models.SearchOptions{
+		Query: "test query",
+	})
+	if err != nil {
+		t.Fatalf("searchStream() error = %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("searchStream() returned nil response")
+	}
+
+	if result.Text != "Streaming answer" {
+		t.Errorf("Text = %q, want %q", result.Text, "Streaming answer")
+	}
+
+	if result.BackendUUID != "test-uuid" {
+		t.Errorf("BackendUUID = %q, want %q", result.BackendUUID, "test-uuid")
+	}
+}
+
+func TestSearchNonStream(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Create legacy format SSE response
+	sseData := `event: message
+data: {"backend_uuid": "legacy-uuid", "text": "{\"blocks\": [{\"markdown_block\": {\"answer\": \"Legacy answer\", \"citations\": []}}]}"}
+
+event: message
+data: [DONE]`
+
+	response := &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader(sseData)),
+	}
+	testHTTP := &testHTTPClient{
+		HTTPClient:  client.http,
+		MockResponse: response,
+	}
+	client.http = testHTTP
+
+	ctx := context.Background()
+	result, err := client.searchNonStream(ctx, models.SearchOptions{
+		Query: "test query",
+	})
+	if err != nil {
+		t.Fatalf("searchNonStream() error = %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("searchNonStream() returned nil response")
+	}
+
+	if result.Text != "Legacy answer" {
+		t.Errorf("Text = %q, want %q", result.Text, "Legacy answer")
+	}
+
+	if result.BackendUUID != "legacy-uuid" {
+		t.Errorf("BackendUUID = %q, want %q", result.BackendUUID, "legacy-uuid")
+	}
+
+	if len(result.Blocks) == 0 {
+		t.Error("Expected blocks in response")
+	}
+}
+
+func TestSearchNonStream_WithErrorInChunk(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Create SSE response with error
+	sseData := `event: message
+data: {"text": "Some text"}
+
+event: message
+data: {"error": "Something went wrong"}
+
+event: message
+data: [DONE]`
+
+	response := &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader(sseData)),
+	}
+	testHTTP := &testHTTPClient{
+		HTTPClient:  client.http,
+		MockResponse: response,
+	}
+	client.http = testHTTP
+
+	ctx := context.Background()
+	result, err := client.searchNonStream(ctx, models.SearchOptions{
+		Query: "test query",
+	})
+	if err == nil {
+		t.Error("searchNonStream() expected error but got nil")
+	}
+
+	if result != nil {
+		t.Error("searchNonStream() should return nil on error")
+	}
+}
+
+func TestSearch(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	sseData := `event: message
+data: [{"step_type": "FINAL", "content": {"answer": "{\"answer\": \"Test answer\", \"web_results\": [], \"chunks\": [], \"extra_web_results\": [], \"structured_answer\": []}"}, "uuid": "search-uuid"}]
+event: message
+data: [DONE]`
+
+	response := &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader(sseData)),
+	}
+	testHTTP := &testHTTPClient{
+		HTTPClient:  client.http,
+		MockResponse: response,
+	}
+	client.http = testHTTP
+
+	ctx := context.Background()
+	result, err := client.Search(ctx, models.SearchOptions{
+		Query:  "test query",
+		Stream: false,
+	})
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+
+	if result == nil {
+		t.Fatal("Search() returned nil response")
+	}
+
+	if result.Text != "Test answer" {
+		t.Errorf("Text = %q, want %q", result.Text, "Test answer")
+	}
+}
+
+func TestSearchStreamIntegration(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	sseData := `event: message
+data: {"delta": "Hello"}
+
+event: message
+data: {"delta": " World"}
+
+event: message
+data: [DONE]`
+
+	response := &http.Response{
+		StatusCode: 200,
+		Body:       io.NopCloser(strings.NewReader(sseData)),
+	}
+	testHTTP := &testHTTPClient{
+		HTTPClient:  client.http,
+		MockResponse: response,
+	}
+	client.http = testHTTP
+
+	ctx := context.Background()
+	ch, err := client.SearchStream(ctx, models.SearchOptions{
+		Query: "test query",
+	})
+	if err != nil {
+		t.Fatalf("SearchStream() error = %v", err)
+	}
+
+	// Collect chunks
+	chunks := []models.StreamChunk{}
+	for chunk := range ch {
+		chunks = append(chunks, chunk)
+		if chunk.Done {
+			break
+		}
+	}
+
+	if len(chunks) != 3 {
+		t.Errorf("Expected 3 chunks, got %d", len(chunks))
+	}
+
+	// Check that we got the deltas
+	if chunks[0].Delta != "Hello" {
+		t.Errorf("First chunk Delta = %q, want %q", chunks[0].Delta, "Hello")
+	}
+	if chunks[1].Delta != " World" {
+		t.Errorf("Second chunk Delta = %q, want %q", chunks[1].Delta, " World")
+	}
+}
+
+func TestParseSSEStream(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	ctx := context.Background()
+
+	// Test with SSE format using \r\n\r\n delimiter
+	sseData := "event: message\ndata: {\"text\": \"First chunk\"}\r\n\r\nevent: message\ndata: {\"text\": \"Second chunk\"}\r\n\rnevent: message\ndata: [DONE]\r\n\r\n"
+
+	ch := make(chan models.StreamChunk, 10)
+	go func() {
+		client.parseSSEStream(ctx, strings.NewReader(sseData), ch)
+		close(ch)
+	}()
+
+	// Collect chunks
+	chunks := []models.StreamChunk{}
+	for chunk := range ch {
+		chunks = append(chunks, chunk)
+	}
+
+	if len(chunks) < 2 {
+		t.Errorf("Expected at least 2 chunks, got %d", len(chunks))
+	}
+
+	// First chunk should have text
+	if len(chunks) > 0 && chunks[0].Text != "First chunk" {
+		t.Errorf("First chunk Text = %q, want %q", chunks[0].Text, "First chunk")
+	}
+
+	// Second chunk should have text
+	if len(chunks) > 1 && chunks[1].Text != "Second chunk" {
+		t.Errorf("Second chunk Text = %q, want %q", chunks[1].Text, "Second chunk")
+	}
+}
+
+func TestParseSSEStream_WithLFOnly(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	ctx := context.Background()
+
+	// Test with SSE format using \n\n delimiter (alternative format)
+	sseData := "event: message\ndata: {\"text\": \"Test with LF\"}\n\nevent: message\ndata: [DONE]\n\n"
+
+	ch := make(chan models.StreamChunk, 10)
+	go func() {
+		client.parseSSEStream(ctx, strings.NewReader(sseData), ch)
+		close(ch)
+	}()
+
+	// Collect chunks
+	chunks := []models.StreamChunk{}
+	for chunk := range ch {
+		chunks = append(chunks, chunk)
+	}
+
+	if len(chunks) == 0 {
+		t.Error("Expected at least 1 chunk")
+	}
+
+	if len(chunks) > 0 && chunks[0].Text != "Test with LF" {
+		t.Errorf("Chunk Text = %q, want %q", chunks[0].Text, "Test with LF")
+	}
+}
+
+func TestParseSSEStream_WithEmptyChunks(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	ctx := context.Background()
+
+	// Test with empty chunks between data
+	sseData := "event: message\ndata: {\"text\": \"First\"}\r\n\r\n\r\n\r\nevent: message\ndata: {\"text\": \"Second\"}\r\n\r\n\r\n\r\nevent: message\ndata: [DONE]\r\n\r\n"
+
+	ch := make(chan models.StreamChunk, 10)
+	go func() {
+		client.parseSSEStream(ctx, strings.NewReader(sseData), ch)
+		close(ch)
+	}()
+
+	// Collect chunks
+	chunks := []models.StreamChunk{}
+	for chunk := range ch {
+		chunks = append(chunks, chunk)
+	}
+
+	// Should handle empty lines gracefully
+	if len(chunks) < 2 {
+		t.Errorf("Expected at least 2 chunks, got %d", len(chunks))
+	}
+}
+
+func TestParseSSEStream_WithEventPrefix(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	ctx := context.Background()
+
+	// Test with explicit "event: message" prefix
+	sseData := "event: message\ndata: {\"text\": \"Prefixed\"}\r\n\r\nevent: message\ndata: [DONE]\r\n\r\n"
+
+	ch := make(chan models.StreamChunk, 10)
+	go func() {
+		client.parseSSEStream(ctx, strings.NewReader(sseData), ch)
+		close(ch)
+	}()
+
+	// Collect chunks
+	chunks := []models.StreamChunk{}
+	for chunk := range ch {
+		chunks = append(chunks, chunk)
+	}
+
+	if len(chunks) == 0 {
+		t.Error("Expected at least 1 chunk")
+	}
+
+	if len(chunks) > 0 && chunks[0].Text != "Prefixed" {
+		t.Errorf("Chunk Text = %q, want %q", chunks[0].Text, "Prefixed")
+	}
+}
+
+func TestParseSSEStream_WithLargeBuffer(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	ctx := context.Background()
+
+	// Create a large SSE response to test buffer handling
+	var buf strings.Builder
+	buf.WriteString("event: message\ndata: {\"text\": \"")
+	// Write large text (60KB+)
+	for i := 0; i < 60000; i++ {
+		buf.WriteRune('a')
+	}
+	buf.WriteString("\"}\r\n\r\nevent: message\ndata: [DONE]\r\n\r\n")
+
+	ch := make(chan models.StreamChunk, 10)
+	go func() {
+		client.parseSSEStream(ctx, strings.NewReader(buf.String()), ch)
+		close(ch)
+	}()
+
+	// Collect chunks
+	chunks := []models.StreamChunk{}
+	for chunk := range ch {
+		chunks = append(chunks, chunk)
+	}
+
+	if len(chunks) == 0 {
+		t.Error("Expected at least 1 chunk")
+	}
+}
+
+func TestParseSSEStream_WithContextCancellation(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	// SSE data with delay
+	sseData := "event: message\ndata: {\"text\": \"Should not parse\"}\r\n\r\nevent: message\ndata: [DONE]\r\n\r\n"
+
+	ch := make(chan models.StreamChunk, 10)
+	go func() {
+		client.parseSSEStream(ctx, strings.NewReader(sseData), ch)
+		close(ch)
+	}()
+
+	// Should receive error due to context cancellation
+	chunk := <-ch
+	if chunk.Error == nil {
+		t.Error("Expected error due to context cancellation")
+	}
+}
+
+func TestParseSSEStream_WithScannerError(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	ctx := context.Background()
+
+	// Create a reader that will cause scanner error
+	invalidData := strings.Repeat("a", 2000) // Larger than default buffer
+
+	ch := make(chan models.StreamChunk, 10)
+	go func() {
+		client.parseSSEStream(ctx, strings.NewReader(invalidData), ch)
+		close(ch)
+	}()
+
+	// Should handle scanner error gracefully
+	chunk := <-ch
+	if chunk.Error == nil {
+		t.Error("Expected error for invalid SSE data")
+	}
+}
+
+func TestParseSSEChunk_WithLegacyInnerJSON(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test legacy format where text field contains inner JSON with blocks
+	chunk := `{"backend_uuid": "legacy-uuid", "text": "{\"blocks\": [{\"markdown_block\": {\"answer\": \"Legacy block answer\", \"citations\": [{\"url\": \"https://example.com\", \"title\": \"Example\", \"snippet\": \"Example snippet\"}]}}, {\"web_search_results\": {\"results\": [{\"url\": \"https://example.com/result\", \"title\": \"Result\", \"snippet\": \"Result snippet\"}]}}]}"}`
+
+	result := client.parseSSEChunk(chunk)
+
+	if result.BackendUUID != "legacy-uuid" {
+		t.Errorf("BackendUUID = %q, want %q", result.BackendUUID, "legacy-uuid")
+	}
+
+	if len(result.Blocks) != 2 {
+		t.Errorf("len(Blocks) = %d, want 2", len(result.Blocks))
+	}
+
+	if result.Blocks[0].MarkdownBlock == nil {
+		t.Error("MarkdownBlock should not be nil")
+	} else if result.Blocks[0].MarkdownBlock.Answer != "Legacy block answer" {
+		t.Errorf("Block Answer = %q, want %q", result.Blocks[0].MarkdownBlock.Answer, "Legacy block answer")
+	}
+
+	if len(result.Blocks[0].MarkdownBlock.Citations) != 1 {
+		t.Errorf("len(Citations) = %d, want 1", len(result.Blocks[0].MarkdownBlock.Citations))
+	} else if result.Blocks[0].MarkdownBlock.Citations[0].URL != "https://example.com" {
+		t.Errorf("Citation URL = %q, want %q", result.Blocks[0].MarkdownBlock.Citations[0].URL, "https://example.com")
+	}
+
+	if result.Blocks[1].WebSearchResults == nil {
+		t.Error("WebSearchResults should not be nil")
+	} else if len(result.Blocks[1].WebSearchResults.Results) != 1 {
+		t.Errorf("len(WebSearchResults) = %d, want 1", len(result.Blocks[1].WebSearchResults.Results))
+	}
+}
+
+func TestParseSSEChunk_WithNestedStepBasedFormat(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test where text field contains step-based format that's already FINAL
+	chunk := `{"backend_uuid": "nested-uuid", "text": "[{\"step_type\": \"FINAL\", \"content\": {\"answer\": \"{\\\"answer\\\": \\\"Nested FINAL answer\\\", \\\"web_results\\\": [{\\\"url\\\": \\\"https://nested.com\\\", \\\"title\\\": \\\"Nested\\\", \\\"snippet\\\": \\\"Nested snippet\\\"}], \\\"chunks\\\": [\\\"Nested\\\", \\\" FINAL\\\", \\\" answer\\\"], \\\"extra_web_results\\\": [], \\\"structured_answer\\\": []}\"}, \"uuid\": \"nested-final-uuid\"}]"}`
+
+	result := client.parseSSEChunk(chunk)
+
+	if result.StepType != "FINAL" {
+		t.Errorf("StepType = %q, want %q", result.StepType, "FINAL")
+	}
+
+	if result.Text != "Nested FINAL answer" {
+		t.Errorf("Text = %q, want %q", result.Text, "Nested FINAL answer")
+	}
+
+	if !result.Done {
+		t.Error("Done should be true for FINAL step")
+	}
+
+	if len(result.WebResults) != 1 {
+		t.Errorf("len(WebResults) = %d, want 1", len(result.WebResults))
+	} else if result.WebResults[0].URL != "https://nested.com" {
+		t.Errorf("WebResults[0].URL = %q, want %q", result.WebResults[0].URL, "https://nested.com")
+	}
+
+	if len(result.Chunks) != 3 {
+		t.Errorf("len(Chunks) = %d, want 3", len(result.Chunks))
+	}
+}
+
+func TestParseSSEChunk_WithDirectStepBasedFormat(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test direct step-based format (not nested in text field)
+	chunk := `[{"step_type": "INITIAL_QUERY", "content": {"query": "direct step query"}, "uuid": "direct-query-uuid"}, {"step_type": "SEARCH_WEB", "content": {}, "uuid": ""}, {"step_type": "FINAL", "content": {"answer": "{\"answer\": \"Direct FINAL answer\", \"web_results\": [], \"chunks\": [], \"extra_web_results\": [], \"structured_answer\": []}"}, "uuid": "direct-final-uuid"}]`
+
+	result := client.parseSSEChunk(chunk)
+
+	if result.StepType != "FINAL" {
+		t.Errorf("StepType = %q, want %q", result.StepType, "FINAL")
+	}
+
+	if result.Text != "Direct FINAL answer" {
+		t.Errorf("Text = %q, want %q", result.Text, "Direct FINAL answer")
+	}
+}
+
+func TestParseSSEChunk_WithInvalidJSON(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test with invalid JSON - should return as plain text
+	chunk := `{"text": "not valid json`
+
+	result := client.parseSSEChunk(chunk)
+
+	if result.Text != `{"text": "not valid json` {
+		t.Errorf("Text = %q, want %q", result.Text, `{"text": "not valid json`)
+	}
+}
+
+func TestParseSSEChunk_WithStepBasedNonFinal(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test with non-FINAL step type
+	chunk := `[{"step_type": "SEARCH_WEB", "content": {"url": "https://search.com"}, "uuid": "search-uuid"}]`
+
+	result := client.parseSSEChunk(chunk)
+
+	if result.StepType != "SEARCH_WEB" {
+		t.Errorf("StepType = %q, want %q", result.StepType, "SEARCH_WEB")
+	}
+
+	if result.BackendUUID != "search-uuid" {
+		t.Errorf("BackendUUID = %q, want %q", result.BackendUUID, "search-uuid")
+	}
+
+	// Non-FINAL steps should not have Done set
+	if result.Done {
+		t.Error("Done should be false for non-FINAL step")
+	}
+}
+
+func TestParseStepBasedResponse_WithMultipleSteps(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test with multiple steps including search results and final
+	data := `[{"step_type": "SEARCH_RESULTS", "content": {"goal_id": "0", "web_results": [{"name": "Result 1", "url": "https://result1.com", "snippet": "Snippet 1"}, {"name": "Result 2", "url": "https://result2.com", "snippet": "Snippet 2"}]}, "uuid": "search-results-uuid"}, {"step_type": "FINAL", "content": {"answer": "{\"answer\": \"Final answer with multiple results\", \"web_results\": [], \"chunks\": [], \"extra_web_results\": [{\"name\": \"Extra\", \"url\": \"https://extra.com\", \"snippet\": \"Extra snippet\"}], \"structured_answer\": []}"}, "uuid": "final-uuid"}]`
+
+	result := client.parseStepBasedResponse(data)
+
+	if result.StepType != "FINAL" {
+		t.Errorf("StepType = %q, want %q", result.StepType, "FINAL")
+	}
+
+	if result.Text != "Final answer with multiple results" {
+		t.Errorf("Text = %q, want %q", result.Text, "Final answer with multiple results")
+	}
+
+	// Should have web results from SEARCH_RESULTS step
+	if len(result.WebResults) < 3 {
+		t.Errorf("Expected at least 3 WebResults, got %d", len(result.WebResults))
+	}
+
+	// Should have extra web results from FINAL step
+	if len(result.WebResults) >= 3 {
+		if result.WebResults[2].URL != "https://extra.com" {
+			t.Errorf("Extra WebResults[2].URL = %q, want %q", result.WebResults[2].URL, "https://extra.com")
+		}
+	}
+}
+
+func TestParseStepBasedResponse_WithMalformedJSON(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test with malformed JSON - should return as plain text
+	data := `[{"step_type": "FINAL", "content": {"answer": "not valid json`
+
+	result := client.parseStepBasedResponse(data)
+
+	if result.Text == "" {
+		t.Error("Expected Text to contain raw data for malformed JSON")
+	}
+}
+
+func TestParseStepBasedResponse_WithExtractionLogic(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test the array extraction logic
+	data := `some prefix [{"step_type": "FINAL", "content": {"answer": "{\"answer\": \"Extracted answer\", \"web_results\": [], \"chunks\": [], \"extra_web_results\": [], \"structured_answer\": []}"}, "uuid": ""}] some suffix`
+
+	result := client.parseStepBasedResponse(data)
+
+	if result.StepType != "FINAL" {
+		t.Errorf("StepType = %q, want %q", result.StepType, "FINAL")
+	}
+
+	if result.Text != "Extracted answer" {
+		t.Errorf("Text = %q, want %q", result.Text, "Extracted answer")
+	}
+}
+
+func TestClientGetCookies(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	cookies := []*http.Cookie{
+		{Name: "cookie1", Value: "value1", Domain: ".perplexity.ai"},
+		{Name: "cookie2", Value: "value2", Domain: ".perplexity.ai"},
+	}
+
+	client.SetCookies(cookies)
+
+	retrieved := client.GetCookies()
+	if len(retrieved) != 2 {
+		t.Errorf("len(retrieved cookies) = %d, want 2", len(retrieved))
+	}
+}
