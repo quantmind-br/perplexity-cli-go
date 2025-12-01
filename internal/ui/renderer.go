@@ -21,6 +21,13 @@ type Renderer struct {
 	useColors bool
 }
 
+// ResponseContainerHorizontalOverhead is the total horizontal space consumed by
+// the ResponseContainerStyle's borders and padding.
+// Border (lipgloss.RoundedBorder): 1 column left + 1 column right = 2 columns
+// Padding(1, 2): 2 columns left + 2 columns right = 4 columns
+// Total: 6 columns
+const ResponseContainerHorizontalOverhead = 6
+
 // Styles for different output elements.
 var (
 	// Custom Warm Colors for Theme
@@ -80,16 +87,23 @@ func NewRendererWithOptions(out io.Writer, width int, useColors bool) (*Renderer
 		style = "notty"
 	}
 
+	// Calculate effective content width by subtracting the container's horizontal overhead
+	// (borders + padding) so that word wrap matches the actual available space
+	effectiveContentWidth := width - ResponseContainerHorizontalOverhead
+	if effectiveContentWidth < 1 {
+		effectiveContentWidth = 1
+	}
+
 	mdRender, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithStylePath("dracula"), // A good warm-ish, dark theme for code highlighting
-		glamour.WithWordWrap(width),
+		glamour.WithWordWrap(effectiveContentWidth),
 		glamour.WithStylePath(style),
 	)
 	if err != nil {
 		// Fallback to basic renderer
 		mdRender, _ = glamour.NewTermRenderer(
-			glamour.WithWordWrap(width),
+			glamour.WithWordWrap(effectiveContentWidth),
 		)
 	}
 
