@@ -17,7 +17,7 @@ const (
 	searchPath   = "/rest/sse/perplexity_ask"
 	sessionPath  = "/api/auth/session"
 	uploadPath   = "/rest/uploads/create_upload_url"
-	userAgent    = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+	userAgent    = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 )
 
 // HTTPClient wraps tls-client to provide Chrome-impersonating HTTP requests.
@@ -32,10 +32,9 @@ func NewHTTPClient() (*HTTPClient, error) {
 
 	options := []tls_client.HttpClientOption{
 		tls_client.WithTimeoutSeconds(60),
-		tls_client.WithClientProfile(profiles.Chrome_120),
-		tls_client.WithNotFollowRedirects(),
+		tls_client.WithClientProfile(profiles.Chrome_133),
 		tls_client.WithCookieJar(jar),
-		tls_client.WithInsecureSkipVerify(),
+		tls_client.WithRandomTLSExtensionOrder(),
 	}
 
 	client, err := tls_client.NewHttpClient(tls_client.NewNoopLogger(), options...)
@@ -73,19 +72,19 @@ func (c *HTTPClient) GetCookies() []*http.Cookie {
 func (c *HTTPClient) buildHeaders() http.Header {
 	headers := http.Header{
 		"Accept":             {"*/*"},
+		"Accept-Encoding":    {"gzip, deflate, br, zstd"},
 		"Accept-Language":    {"en-US,en;q=0.9"},
-		"Cache-Control":      {"no-cache"},
 		"Content-Type":       {"application/json"},
 		"Origin":             {baseURL},
-		"Pragma":             {"no-cache"},
 		"Referer":            {baseURL + "/"},
 		"User-Agent":         {userAgent},
-		"sec-ch-ua":          {`"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"`},
+		"sec-ch-ua":          {`"Chromium";v="133", "Not(A:Brand";v="99", "Google Chrome";v="133"`},
 		"sec-ch-ua-mobile":   {"?0"},
-		"sec-ch-ua-platform": {`"Windows"`},
+		"sec-ch-ua-platform": {`"Linux"`},
 		"sec-fetch-dest":     {"empty"},
 		"sec-fetch-mode":     {"cors"},
 		"sec-fetch-site":     {"same-origin"},
+		"priority":           {"u=1, i"},
 	}
 	return headers
 }

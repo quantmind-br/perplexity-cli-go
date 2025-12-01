@@ -4,11 +4,49 @@ import "time"
 
 // SearchResponse represents a complete response from Perplexity.
 type SearchResponse struct {
-	Text         string         `json:"text"`
-	BackendUUID  string         `json:"backend_uuid,omitempty"`
+	Text         string          `json:"text"`
+	BackendUUID  string          `json:"backend_uuid,omitempty"`
 	Blocks       []ResponseBlock `json:"blocks,omitempty"`
-	Attachments  []Attachment   `json:"attachments,omitempty"`
-	FinishReason string         `json:"finish_reason,omitempty"`
+	Attachments  []Attachment    `json:"attachments,omitempty"`
+	FinishReason string          `json:"finish_reason,omitempty"`
+	WebResults   []WebResult     `json:"web_results,omitempty"`
+}
+
+// SSEStep represents a step in the SSE stream response.
+type SSEStep struct {
+	StepType string      `json:"step_type"`
+	Content  interface{} `json:"content"`
+	UUID     string      `json:"uuid,omitempty"`
+}
+
+// FinalContent represents the content of a FINAL step.
+type FinalContent struct {
+	Answer string `json:"answer"`
+}
+
+// FinalAnswer represents the parsed answer JSON from a FINAL step.
+type FinalAnswer struct {
+	Answer           string      `json:"answer"`
+	WebResults       []WebResult `json:"web_results,omitempty"`
+	Chunks           []string    `json:"chunks,omitempty"`
+	ExtraWebResults  []WebResult `json:"extra_web_results,omitempty"`
+	StructuredAnswer []string    `json:"structured_answer,omitempty"`
+}
+
+// WebResult represents a web search result from the API.
+type WebResult struct {
+	Name      string                 `json:"name,omitempty"`
+	URL       string                 `json:"url"`
+	Snippet   string                 `json:"snippet,omitempty"`
+	Title     string                 `json:"title,omitempty"`
+	MetaData  map[string]interface{} `json:"meta_data,omitempty"`
+	SiteLinks []interface{}          `json:"sitelinks,omitempty"`
+}
+
+// SearchResultsContent represents SEARCH_RESULTS step content.
+type SearchResultsContent struct {
+	GoalID     string      `json:"goal_id,omitempty"`
+	WebResults []WebResult `json:"web_results,omitempty"`
 }
 
 // ResponseBlock represents a block in the response.
@@ -81,6 +119,10 @@ type StreamChunk struct {
 	Blocks      []ResponseBlock `json:"blocks,omitempty"`
 	Done        bool            `json:"done,omitempty"`
 	Error       error           `json:"-"`
+	// New step-based fields
+	StepType   string      `json:"step_type,omitempty"`
+	WebResults []WebResult `json:"web_results,omitempty"`
+	Chunks     []string    `json:"chunks,omitempty"`
 }
 
 // HistoryEntry represents a query in the history file.

@@ -337,3 +337,124 @@ func TestParseBlocks(t *testing.T) {
 		t.Errorf("URL = %q, want %q", result[1].WebSearchResults.Results[0].URL, "https://example.com/result")
 	}
 }
+
+func TestParseStepBasedResponse(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test with a complete step-based response
+	data := `[{"step_type": "INITIAL_QUERY", "content": {"query": "test"}, "uuid": ""}, {"step_type": "FINAL", "content": {"answer": "{\"answer\": \"This is the answer.\", \"web_results\": [], \"chunks\": [\"This\", \" is\", \" the\", \" answer.\"], \"extra_web_results\": [], \"structured_answer\": []}"}, "uuid": "test-uuid"}]`
+
+	result := client.parseStepBasedResponse(data)
+
+	if result.StepType != "FINAL" {
+		t.Errorf("StepType = %q, want %q", result.StepType, "FINAL")
+	}
+	if result.Text != "This is the answer." {
+		t.Errorf("Text = %q, want %q", result.Text, "This is the answer.")
+	}
+	if len(result.Chunks) != 4 {
+		t.Errorf("len(Chunks) = %d, want 4", len(result.Chunks))
+	}
+}
+
+func TestParseStepBasedResponse_WithWebResults(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test with web results in SEARCH_RESULTS step
+	data := `[{"step_type": "SEARCH_RESULTS", "content": {"goal_id": "0", "web_results": [{"name": "Test", "url": "https://example.com", "snippet": "Test snippet"}]}, "uuid": "test-uuid"}]`
+
+	result := client.parseStepBasedResponse(data)
+
+	if result.StepType != "SEARCH_RESULTS" {
+		t.Errorf("StepType = %q, want %q", result.StepType, "SEARCH_RESULTS")
+	}
+	if len(result.WebResults) != 1 {
+		t.Fatalf("len(WebResults) = %d, want 1", len(result.WebResults))
+	}
+	if result.WebResults[0].URL != "https://example.com" {
+		t.Errorf("WebResults[0].URL = %q, want %q", result.WebResults[0].URL, "https://example.com")
+	}
+}
+
+func TestParseStepBasedResponse_WithTrailingSSEMarker(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test with trailing SSE marker
+	data := `[{"step_type": "FINAL", "content": {"answer": "{\"answer\": \"Answer text.\", \"web_results\": [], \"chunks\": [], \"extra_web_results\": [], \"structured_answer\": []}"}, "uuid": ""}]event: end_of_stream
+data: {}`
+
+	result := client.parseStepBasedResponse(data)
+
+	if result.StepType != "FINAL" {
+		t.Errorf("StepType = %q, want %q", result.StepType, "FINAL")
+	}
+	if result.Text != "Answer text." {
+		t.Errorf("Text = %q, want %q", result.Text, "Answer text.")
+	}
+}
+
+func TestParseSSEChunk_NewFormat(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	// Test with new format where text field contains step array
+	chunk := `{"backend_uuid": "test-uuid", "text": "[{\"step_type\": \"FINAL\", \"content\": {\"answer\": \"{\\\"answer\\\": \\\"The answer.\\\", \\\"web_results\\\": [], \\\"chunks\\\": [], \\\"extra_web_results\\\": [], \\\"structured_answer\\\": []}\"}, \"uuid\": \"\"}]"}`
+
+	result := client.parseSSEChunk(chunk)
+
+	if result.StepType != "FINAL" {
+		t.Errorf("StepType = %q, want %q", result.StepType, "FINAL")
+	}
+	if result.Text != "The answer." {
+		t.Errorf("Text = %q, want %q", result.Text, "The answer.")
+	}
+	if !result.Done {
+		t.Error("Done should be true for FINAL step")
+	}
+}
+
+func TestParseSSEChunk_EndOfStream(t *testing.T) {
+	cfg := DefaultConfig()
+	client, err := New(cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer client.Close()
+
+	tests := []struct {
+		name  string
+		chunk string
+	}{
+		{"event: end_of_stream", "event: end_of_stream\ndata: {}"},
+		{"empty object", "{}"},
+		{"data: empty object", "data: {}"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := client.parseSSEChunk(tt.chunk)
+			if !result.Done {
+				t.Errorf("Done = false, want true for %q", tt.chunk)
+			}
+		})
+	}
+}

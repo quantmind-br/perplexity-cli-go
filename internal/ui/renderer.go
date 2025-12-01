@@ -105,7 +105,20 @@ func (r *Renderer) RenderMarkdown(content string) error {
 
 // RenderResponse renders a complete search response.
 func (r *Renderer) RenderResponse(resp *models.SearchResponse) error {
-	// Find and render markdown blocks
+	// First check for new format with direct Text and WebResults
+	if resp.Text != "" {
+		if err := r.RenderMarkdown(resp.Text); err != nil {
+			return err
+		}
+
+		// Render web results from new format
+		if len(resp.WebResults) > 0 {
+			r.RenderWebResults(resp.WebResults)
+		}
+		return nil
+	}
+
+	// Fallback: Find and render markdown blocks (legacy format)
 	for _, block := range resp.Blocks {
 		if block.MarkdownBlock != nil {
 			if err := r.RenderMarkdown(block.MarkdownBlock.Answer); err != nil {
@@ -117,11 +130,6 @@ func (r *Renderer) RenderResponse(resp *models.SearchResponse) error {
 				r.RenderCitations(block.MarkdownBlock.Citations)
 			}
 		}
-	}
-
-	// If no blocks, render raw text
-	if len(resp.Blocks) == 0 && resp.Text != "" {
-		return r.RenderMarkdown(resp.Text)
 	}
 
 	return nil
@@ -146,6 +154,44 @@ func (r *Renderer) RenderCitations(citations []models.Citation) {
 		fmt.Fprintf(r.out, "%s %s\n", DimStyle.Render(num), CitationStyle.Render(title))
 		if cite.URL != "" && cite.URL != title {
 			fmt.Fprintf(r.out, "    %s\n", DimStyle.Render(cite.URL))
+		}
+	}
+}
+
+// RenderWebResults renders web search results from new API format.
+func (r *Renderer) RenderWebResults(results []models.WebResult) {
+	if len(results) == 0 {
+		return
+	}
+
+	// Filter out internal calculator results
+	var filteredResults []models.WebResult
+	for _, wr := range results {
+		if wr.URL != "https://perplexity.ai" && wr.URL != "" {
+			filteredResults = append(filteredResults, wr)
+		}
+	}
+
+	if len(filteredResults) == 0 {
+		return
+	}
+
+	fmt.Fprintln(r.out)
+	fmt.Fprintln(r.out, DimStyle.Render("Sources:"))
+
+	for i, wr := range filteredResults {
+		title := wr.Title
+		if title == "" {
+			title = wr.Name
+		}
+		if title == "" {
+			title = wr.URL
+		}
+
+		num := fmt.Sprintf("[%d]", i+1)
+		fmt.Fprintf(r.out, "%s %s\n", DimStyle.Render(num), CitationStyle.Render(title))
+		if wr.URL != "" && wr.URL != title {
+			fmt.Fprintf(r.out, "    %s\n", DimStyle.Render(wr.URL))
 		}
 	}
 }

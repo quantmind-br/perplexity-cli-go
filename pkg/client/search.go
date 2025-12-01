@@ -118,6 +118,10 @@ func (c *Client) searchNonStream(ctx context.Context, opts models.SearchOptions)
 		if len(chunk.Blocks) > 0 {
 			response.Blocks = chunk.Blocks
 		}
+		// Collect web results from new format
+		if len(chunk.WebResults) > 0 {
+			response.WebResults = append(response.WebResults, chunk.WebResults...)
+		}
 	}
 
 	response.Text = fullText.String()
@@ -234,11 +238,28 @@ func (c *Client) parseSSEChunk(chunk string) models.StreamChunk {
 		data = strings.TrimPrefix(chunk, "data: ")
 	}
 
-	if data == "" || data == "[DONE]" {
+	// Handle end of stream
+	if data == "" || data == "{}" {
 		return models.StreamChunk{Done: true}
 	}
 
-	// Parse outer JSON
+	// Check for end_of_stream event
+	if strings.HasPrefix(data, "event: end_of_stream") {
+		return models.StreamChunk{Done: true}
+	}
+
+	// Check for [DONE] marker
+	if strings.Contains(data, "[DONE]") {
+		return models.StreamChunk{Done: true}
+	}
+
+	// Try to parse as new step-based format (array of steps - direct)
+	trimmedData := strings.TrimSpace(data)
+	if strings.HasPrefix(trimmedData, "[{") && strings.Contains(trimmedData, "step_type") {
+		return c.parseStepBasedResponse(trimmedData)
+	}
+
+	// Parse as outer JSON object
 	var outer map[string]interface{}
 	if err := json.Unmarshal([]byte(data), &outer); err != nil {
 		// Not JSON, might be plain text
@@ -252,8 +273,27 @@ func (c *Client) parseSSEChunk(chunk string) models.StreamChunk {
 		result.BackendUUID = uuid
 	}
 
-	// Parse inner text field (double JSON parsing)
+	// Parse inner text field (new format: text contains step array as string)
 	if textField, ok := outer["text"].(string); ok {
+		textTrimmed := strings.TrimSpace(textField)
+		// Check if text contains step-based format
+		if strings.HasPrefix(textTrimmed, "[{") && strings.Contains(textTrimmed, "step_type") {
+			// Parse the step array from the text field
+			stepResult := c.parseStepBasedResponse(textTrimmed)
+			if stepResult.StepType == "FINAL" && stepResult.Text != "" {
+				result.Text = stepResult.Text
+				result.StepType = stepResult.StepType
+				result.WebResults = stepResult.WebResults
+				result.Chunks = stepResult.Chunks
+				result.Done = true
+				return result
+			}
+			// For non-FINAL steps, just note the step type
+			result.StepType = stepResult.StepType
+			return result
+		}
+
+		// Try legacy format: inner JSON with blocks
 		var inner map[string]interface{}
 		if err := json.Unmarshal([]byte(textField), &inner); err == nil {
 			// Successfully parsed inner JSON
@@ -277,6 +317,125 @@ func (c *Client) parseSSEChunk(chunk string) models.StreamChunk {
 	}
 	if finishReason, ok := outer["finish_reason"].(string); ok && finishReason != "" {
 		result.Done = true
+	}
+
+	return result
+}
+
+// parseStepBasedResponse parses the new step-based response format.
+func (c *Client) parseStepBasedResponse(data string) models.StreamChunk {
+	// Handle case where data might contain trailing SSE markers
+	// The data might look like: [...JSON...]event: end_of_stream\ndata: {}
+	if idx := strings.Index(data, "]event:"); idx > 0 {
+		data = data[:idx+1]
+	}
+	if idx := strings.Index(data, "]\nevent:"); idx > 0 {
+		data = data[:idx+1]
+	}
+	if idx := strings.Index(data, "]\r\nevent:"); idx > 0 {
+		data = data[:idx+1]
+	}
+	data = strings.TrimSpace(data)
+
+	var steps []models.SSEStep
+	if err := json.Unmarshal([]byte(data), &steps); err != nil {
+		// Try to extract just the array part
+		startIdx := strings.Index(data, "[")
+		endIdx := strings.LastIndex(data, "]")
+		if startIdx >= 0 && endIdx > startIdx {
+			data = data[startIdx : endIdx+1]
+			if err := json.Unmarshal([]byte(data), &steps); err != nil {
+				return models.StreamChunk{Text: data}
+			}
+		} else {
+			return models.StreamChunk{Text: data}
+		}
+	}
+
+	result := models.StreamChunk{}
+
+	// Process each step
+	for _, step := range steps {
+		switch step.StepType {
+		case "FINAL":
+			// Parse final content
+			contentMap, ok := step.Content.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			answerJSON, ok := contentMap["answer"].(string)
+			if !ok {
+				continue
+			}
+
+			// Parse the nested answer JSON
+			var finalAnswer models.FinalAnswer
+			if err := json.Unmarshal([]byte(answerJSON), &finalAnswer); err != nil {
+				// If parsing fails, try to use the raw answer
+				result.Text = answerJSON
+				continue
+			}
+
+			// Extract the answer text
+			result.Text = finalAnswer.Answer
+			result.StepType = "FINAL"
+			result.Chunks = finalAnswer.Chunks
+			result.WebResults = finalAnswer.WebResults
+
+			// Also add extra web results
+			if len(finalAnswer.ExtraWebResults) > 0 {
+				result.WebResults = append(result.WebResults, finalAnswer.ExtraWebResults...)
+			}
+
+		case "SEARCH_RESULTS":
+			// Parse search results
+			contentMap, ok := step.Content.(map[string]interface{})
+			if !ok {
+				continue
+			}
+
+			webResultsRaw, ok := contentMap["web_results"].([]interface{})
+			if !ok {
+				continue
+			}
+
+			for _, wrRaw := range webResultsRaw {
+				wrMap, ok := wrRaw.(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				wr := models.WebResult{}
+				if name, ok := wrMap["name"].(string); ok {
+					wr.Name = name
+				}
+				if url, ok := wrMap["url"].(string); ok {
+					wr.URL = url
+				}
+				if snippet, ok := wrMap["snippet"].(string); ok {
+					wr.Snippet = snippet
+				}
+				if title, ok := wrMap["title"].(string); ok {
+					wr.Title = title
+				}
+				result.WebResults = append(result.WebResults, wr)
+			}
+			result.StepType = "SEARCH_RESULTS"
+
+		case "INITIAL_QUERY":
+			result.StepType = "INITIAL_QUERY"
+			// Ignore initial query content
+
+		case "SEARCH_WEB":
+			result.StepType = "SEARCH_WEB"
+			// Ignore search web step
+		}
+
+		// Extract UUID
+		if step.UUID != "" {
+			result.BackendUUID = step.UUID
+		}
 	}
 
 	return result

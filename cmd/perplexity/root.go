@@ -77,7 +77,7 @@ func init() {
 	// Add subcommands
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(historyCmd)
-	rootCmd.AddCommand(authCmd)
+	rootCmd.AddCommand(cookiesCmd)
 	rootCmd.AddCommand(versionCmd)
 }
 
@@ -123,7 +123,7 @@ func runQuery(cmd *cobra.Command, args []string) error {
 	// Check if cookies exist
 	if _, err := os.Stat(cookieFile); os.IsNotExist(err) {
 		render.RenderError(fmt.Errorf("cookies file not found: %s", cookieFile))
-		render.RenderInfo("Run 'perplexity auth' to set up authentication")
+		render.RenderInfo("Run 'perplexity cookies import <file>' to import cookies from browser")
 		return fmt.Errorf("no cookies found")
 	}
 
@@ -185,6 +185,7 @@ func runQuery(cmd *cobra.Command, args []string) error {
 		}
 
 		var fullResponse strings.Builder
+		var allWebResults []models.WebResult
 		for chunk := range ch {
 			if chunk.Error != nil {
 				if chunk.Error == context.Canceled {
@@ -196,14 +197,31 @@ func runQuery(cmd *cobra.Command, args []string) error {
 				return chunk.Error
 			}
 
-			render.RenderStreamChunk(chunk)
-			if chunk.Delta != "" {
-				fullResponse.WriteString(chunk.Delta)
-			} else if chunk.Text != "" {
+			// For new step-based format, only render FINAL step
+			if chunk.StepType == "FINAL" && chunk.Text != "" {
+				// Render as markdown instead of raw text
+				if err := render.RenderMarkdown(chunk.Text); err != nil {
+					render.RenderStreamChunk(chunk)
+				}
 				fullResponse.WriteString(chunk.Text)
+				allWebResults = append(allWebResults, chunk.WebResults...)
+			} else if chunk.StepType == "" {
+				// Legacy format - render as stream
+				render.RenderStreamChunk(chunk)
+				if chunk.Delta != "" {
+					fullResponse.WriteString(chunk.Delta)
+				} else if chunk.Text != "" {
+					fullResponse.WriteString(chunk.Text)
+				}
 			}
 		}
 		render.NewLine()
+
+		// Render web results if any
+		if len(allWebResults) > 0 {
+			render.RenderWebResults(allWebResults)
+		}
+
 		responseText = fullResponse.String()
 	} else {
 		// Non-streaming mode with spinner

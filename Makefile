@@ -10,7 +10,7 @@ LDFLAGS := -ldflags "-X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) 
 
 # Directories
 BUILD_DIR := ./build
-INSTALL_DIR := /usr/local/bin
+GOPATH_BIN := $(shell go env GOPATH)/bin
 
 # Go commands
 GOCMD := go
@@ -41,12 +41,13 @@ build-release:
 	CGO_ENABLED=0 $(GOBUILD) $(LDFLAGS) -trimpath -ldflags "-s -w -X main.Version=$(VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildDate=$(BUILD_DATE)" -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/perplexity
 	@echo "Release binary built: $(BUILD_DIR)/$(BINARY_NAME)"
 
-# Install to system (requires sudo)
+# Install to GOPATH/bin
 install: build
-	@echo "Installing $(BINARY_NAME) to $(INSTALL_DIR)..."
-	@sudo cp $(BUILD_DIR)/$(BINARY_NAME) $(INSTALL_DIR)/$(BINARY_NAME)
-	@sudo chmod +x $(INSTALL_DIR)/$(BINARY_NAME)
-	@echo "Installed: $(INSTALL_DIR)/$(BINARY_NAME)"
+	@echo "Installing $(BINARY_NAME) to $(GOPATH_BIN)..."
+	@mkdir -p $(GOPATH_BIN)
+	@cp $(BUILD_DIR)/$(BINARY_NAME) $(GOPATH_BIN)/$(BINARY_NAME)
+	@chmod +x $(GOPATH_BIN)/$(BINARY_NAME)
+	@echo "Installed: $(GOPATH_BIN)/$(BINARY_NAME)"
 	@echo "Run '$(BINARY_NAME) --help' to get started"
 
 # Install to user directory (no sudo required)
@@ -58,10 +59,10 @@ install-user: build
 	@echo "Installed: ~/.local/bin/$(BINARY_NAME)"
 	@echo "Make sure ~/.local/bin is in your PATH"
 
-# Uninstall from system
+# Uninstall from GOPATH/bin
 uninstall:
-	@echo "Uninstalling $(BINARY_NAME)..."
-	@sudo rm -f $(INSTALL_DIR)/$(BINARY_NAME)
+	@echo "Uninstalling $(BINARY_NAME) from $(GOPATH_BIN)..."
+	@rm -f $(GOPATH_BIN)/$(BINARY_NAME)
 	@echo "Uninstalled $(BINARY_NAME)"
 
 # Uninstall from user directory
@@ -165,9 +166,9 @@ help:
 	@echo "  build-windows   Build for Windows amd64"
 	@echo ""
 	@echo "Install targets:"
-	@echo "  install         Install to /usr/local/bin (requires sudo)"
-	@echo "  install-user    Install to ~/.local/bin (no sudo)"
-	@echo "  uninstall       Remove from /usr/local/bin"
+	@echo "  install         Install to GOPATH/bin"
+	@echo "  install-user    Install to ~/.local/bin"
+	@echo "  uninstall       Remove from GOPATH/bin"
 	@echo "  uninstall-user  Remove from ~/.local/bin"
 	@echo ""
 	@echo "Test targets:"

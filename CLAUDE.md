@@ -13,8 +13,8 @@ perplexity-go/
 ├── cmd/perplexity/     # CLI commands (Cobra)
 │   ├── main.go         # Entry point
 │   ├── root.go         # Main query command + flag handling
-│   ├── config.go       # Config subcommands (show/set/reset)
-│   ├── auth.go         # Cookie management (status/import/clear)
+│   ├── config.go       # Interactive config menu (uses huh TUI)
+│   ├── cookies.go      # Cookie management (import/status/clear/path)
 │   ├── history.go      # Query history
 │   └── version.go      # Version info
 ├── pkg/
@@ -31,13 +31,14 @@ perplexity-go/
     ├── auth/           # Cookie loading (JSON/Netscape formats)
     ├── config/         # Viper-based config (~/.perplexity-cli/config.json)
     ├── history/        # JSONL history writer
-    └── ui/             # Glamour/Lipgloss terminal rendering
+    └── ui/             # Glamour/Lipgloss rendering + interactive config menu
 ```
 
 ### Key Dependencies
 - `github.com/bogdanfinn/tls-client` + `fhttp`: Chrome TLS fingerprint impersonation
 - `github.com/spf13/cobra` + `viper`: CLI framework and config
 - `github.com/charmbracelet/glamour` + `lipgloss`: Terminal markdown rendering
+- `github.com/charmbracelet/huh`: Interactive terminal UI forms
 
 ## Common Commands
 
@@ -94,9 +95,28 @@ make run ARGS='"What is Go?"'
 Cookies must be exported from browser (JSON format via extension or Netscape format). Required cookie: `next-auth.csrf-token`.
 
 ```bash
-perplexity auth import cookies.json  # Import cookies
-perplexity auth status               # Check authentication
+perplexity cookies import cookies.json  # Import cookies
+perplexity cookies status               # Check authentication
+perplexity cookies clear                # Clear saved cookies
+perplexity cookies path                 # Show cookie file path
 ```
+
+## Interactive Configuration
+
+The `perplexity config` command opens an interactive menu to manage settings:
+
+```bash
+perplexity config                       # Open interactive config menu
+perplexity config path                  # Show config file path
+```
+
+Configuration options available in the interactive menu:
+- Model: Default AI model
+- Mode: Search mode (fast, pro, reasoning, deep-research, default)
+- Language: Response language
+- Sources: Search sources (web, scholar, social)
+- Streaming: Enable/disable streaming output
+- Incognito: Enable/disable history saving
 
 ## Testing Notes
 
