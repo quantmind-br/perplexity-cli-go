@@ -15,6 +15,12 @@ import (
 	"github.com/diogo/perplexity-go/pkg/models"
 )
 
+// S3HTTPClient defines the interface for S3 upload requests.
+// This allows injection of mock clients for testing.
+type S3HTTPClient interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 // UploadFile uploads a file and returns its URL for use in queries.
 func (c *Client) UploadFile(filePath string) (string, error) {
 	// Read file
@@ -110,8 +116,14 @@ func (c *Client) uploadToS3(upload models.UploadURLResponse, data []byte, filena
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	// Use injected S3 client if available, otherwise use default http.Client
+	var s3Client S3HTTPClient
+	if c.s3Client != nil {
+		s3Client = c.s3Client
+	} else {
+		s3Client = &http.Client{}
+	}
+	resp, err := s3Client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("S3 request failed: %w", err)
 	}

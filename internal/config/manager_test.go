@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/diogo/perplexity-go/pkg/models"
+	"github.com/spf13/viper"
 )
 
 func TestParseBoolean(t *testing.T) {
@@ -243,23 +244,27 @@ func TestManager_Save_CreateDirectory(t *testing.T) {
 
 func TestManager_Load_InvalidConfig(t *testing.T) {
 	tmpDir := t.TempDir()
-	configFile := filepath.Join(tmpDir, "invalid.json")
+	configFile := filepath.Join(tmpDir, "config.json")
 
 	// Create invalid config
 	if err := os.WriteFile(configFile, []byte("invalid json {"), 0644); err != nil {
 		t.Fatalf("Failed to write test file: %v", err)
 	}
 
-	mgr, err := NewManager()
-	if err != nil {
-		t.Fatalf("NewManager() error = %v", err)
+	// Create a fresh viper instance to avoid using cached config paths
+	v := viper.New()
+	v.SetConfigName("config")
+	v.SetConfigType("json")
+	v.AddConfigPath(tmpDir)
+
+	mgr := &Manager{
+		v:       v,
+		cfgDir:  tmpDir,
+		cfgFile: configFile,
 	}
 
-	mgr.cfgDir = tmpDir
-	mgr.cfgFile = configFile
-
-	// Load should return error or use defaults
-	_, err = mgr.Load()
+	// Load should return error for invalid JSON
+	_, err := mgr.Load()
 	if err == nil {
 		t.Error("Expected error for invalid config")
 	}

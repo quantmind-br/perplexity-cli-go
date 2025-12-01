@@ -42,6 +42,9 @@ type HTTPClientInterface interface {
 	// GetCSRFToken retrieves the CSRF token from cookies.
 	GetCSRFToken() string
 
+	// GetCookies returns current cookies.
+	GetCookies() []*http.Cookie
+
 	// Close closes the HTTP client and releases resources.
 	Close() error
 }
@@ -308,6 +311,16 @@ func (m *MockHTTPClient) GetCSRFToken() string {
 		return ""
 	}
 	return token
+}
+
+// GetCookies returns cookies as http.Cookie slice for testing.
+// Implements HTTPClientInterface.
+func (m *MockHTTPClient) GetCookies() []*http.Cookie {
+	cookies := make([]*http.Cookie, 0, len(m.Cookies))
+	for name, value := range m.Cookies {
+		cookies = append(cookies, &http.Cookie{Name: name, Value: value})
+	}
+	return cookies
 }
 
 // Close closes the mock client for testing.

@@ -12,16 +12,17 @@ import (
 
 // Client is the main Perplexity API client.
 type Client struct {
-	http          *HTTPClient
-	cookies       []*http.Cookie
-	csrfToken     string
-	defaultModel  models.Model
-	defaultMode   models.Mode
-	defaultLang   string
-	defaultSrcs   []models.Source
-	proQueries    int
-	fileUploads   int
-	maxProQueries int
+	http           HTTPClientInterface
+	s3Client       S3HTTPClient // For S3 uploads (injectable for testing)
+	cookies        []*http.Cookie
+	csrfToken      string
+	defaultModel   models.Model
+	defaultMode    models.Mode
+	defaultLang    string
+	defaultSrcs    []models.Source
+	proQueries     int
+	fileUploads    int
+	maxProQueries  int
 	maxFileUploads int
 }
 

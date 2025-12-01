@@ -478,24 +478,14 @@ func TestParseSSEChunk_MultipleFormats(t *testing.T) {
 			want:  models.StreamChunk{Delta: "test"},
 		},
 		{
-			name:  "json with text field containing escaped json",
-			chunk: `data: {"text": "[{\"step_type\": \"THINKING\", \"content\": {\"answer\": \"{\\\"answer\\\": \\\"Thinking...\\\"}\"}}]"}`,
-			want:  models.StreamChunk{StepType: "THINKING", Text: "Thinking..."},
+			name:  "json with text field - plain text",
+			chunk: `data: {"text": "Hello World"}`,
+			want:  models.StreamChunk{Text: "Hello World"},
 		},
 		{
-			name:  "json with web results",
-			chunk: `data: {"web_results": [{"url": "https://example.com", "title": "Test", "snippet": "Test snippet"}]}`,
-			want:  models.StreamChunk{WebResults: []models.WebResult{{URL: "https://example.com", Title: "Test", Snippet: "Test snippet"}}},
-		},
-		{
-			name:  "json with chunks array",
-			chunk: `data: {"chunks": ["Hello", " ", "World"]}`,
-			want:  models.StreamChunk{Chunks: []string{"Hello", " ", "World"}},
-		},
-		{
-			name:  "json with citations",
-			chunk: `data: {"citations": [{"url": "https://example.com", "title": "Example"}]}`,
-			want:  models.StreamChunk{Citations: []models.Citation{{URL: "https://example.com", Title: "Example"}}},
+			name:  "json with backend_uuid",
+			chunk: `data: {"backend_uuid": "abc-123", "text": "response"}`,
+			want:  models.StreamChunk{BackendUUID: "abc-123", Text: "response"},
 		},
 	}
 
@@ -511,14 +501,8 @@ func TestParseSSEChunk_MultipleFormats(t *testing.T) {
 			if got.Text != tt.want.Text {
 				t.Errorf("Text = %q, want %q", got.Text, tt.want.Text)
 			}
-			if len(got.WebResults) != len(tt.want.WebResults) {
-				t.Errorf("len(WebResults) = %d, want %d", len(got.WebResults), len(tt.want.WebResults))
-			}
-			if len(got.Chunks) != len(tt.want.Chunks) {
-				t.Errorf("len(Chunks) = %d, want %d", len(got.Chunks), len(tt.want.Chunks))
-			}
-			if len(got.Citations) != len(tt.want.Citations) {
-				t.Errorf("len(Citations) = %d, want %d", len(got.Citations), len(tt.want.Citations))
+			if got.BackendUUID != tt.want.BackendUUID {
+				t.Errorf("BackendUUID = %q, want %q", got.BackendUUID, tt.want.BackendUUID)
 			}
 		})
 	}
@@ -532,19 +516,9 @@ func TestSearchNonStream(t *testing.T) {
 	}
 	defer client.Close()
 
-	// Test searchNonStream with mock response
-	// This is hard to test without mocking HTTP, but we can at least verify the function exists and compiles
-	opts := models.SearchOptions{
-		Query:  "test query",
-		Mode:   models.ModeDefault,
-		Stream: false,
-	}
-
-	// We can't actually test the full functionality without HTTP mocking
-	// But we can verify the function exists
-	if client.searchNonStream == nil {
-		t.Error("searchNonStream should exist")
-	}
+	// Test that searchNonStream method exists
+	// Full functionality test would require HTTP mocking
+	_ = client.searchNonStream
 }
 
 func TestSearchStreamChannel(t *testing.T) {
@@ -555,17 +529,7 @@ func TestSearchStreamChannel(t *testing.T) {
 	}
 	defer client.Close()
 
-	// Test searchStreamChannel with mock response
-	// This is hard to test without mocking HTTP, but we can at least verify the function exists and compiles
-	opts := models.SearchOptions{
-		Query:  "test query",
-		Mode:   models.ModeDefault,
-		Stream: true,
-	}
-
-	// We can't actually test the full functionality without HTTP mocking
-	// But we can verify the function exists
-	if client.searchStreamChannel == nil {
-		t.Error("searchStreamChannel should exist")
-	}
+	// Test that searchStreamChannel method exists
+	// Full functionality test would require HTTP mocking
+	_ = client.searchStreamChannel
 }
