@@ -723,6 +723,26 @@ func TestNormalizeMarkdownText(t *testing.T) {
 			input: "Just one line.",
 			want:  "Just one line.",
 		},
+		{
+			name:  "list item with wrapped continuation",
+			input: "• Importância: Foi a primeira prova extra-bíblica de que Davi não era um\nmito, mas o fundador de uma linhagem real.",
+			want:  "• Importância: Foi a primeira prova extra-bíblica de que Davi não era um mito, mas o fundador de uma linhagem real.",
+		},
+		{
+			name:  "multiple list items with wrapping",
+			input: "• First item that spans\nmultiple lines here.\n• Second item also\nwrapped.",
+			want:  "• First item that spans multiple lines here.\n• Second item also wrapped.",
+		},
+		{
+			name:  "paragraph after list item",
+			input: "• A list item.\n\nA new paragraph after\nthe list.",
+			want:  "• A list item.\n\nA new paragraph after the list.",
+		},
+		{
+			name:  "real API response pattern",
+			input: "Durante décadas, acreditava-se que as famosas \"Minas do Rei Salomão\" eram\num\nmito ou que a mineração na região só ocorrera séculos depois.",
+			want:  "Durante décadas, acreditava-se que as famosas \"Minas do Rei Salomão\" eram um mito ou que a mineração na região só ocorrera séculos depois.",
+		},
 	}
 
 	for _, tt := range tests {

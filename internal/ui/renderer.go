@@ -311,27 +311,33 @@ func (r *Renderer) NewLine() {
 // normalizeMarkdownText removes artificial line breaks from API responses
 // while preserving markdown structure (headers, lists, tables, code blocks, paragraphs).
 func normalizeMarkdownText(text string) string {
-	// Patterns that indicate a line should NOT be joined with previous
-	structuralPatterns := regexp.MustCompile(`^(\s*(#{1,6}\s|[-*•]\s|\d+\.\s|\|)|` + "```)")
+	// Normalize CRLF to LF
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+
+	// Patterns for structural elements
+	headerPattern := regexp.MustCompile(`^\s*#{1,6}\s`)
+	listPattern := regexp.MustCompile(`^\s*([-*•]|\d+\.)\s`)
+	tablePattern := regexp.MustCompile(`^\s*\|`)
+	codeBlockPattern := regexp.MustCompile("^\\s*```")
 
 	lines := strings.Split(text, "\n")
 	var result []string
-	var currentParagraph strings.Builder
+	var currentBlock strings.Builder
 	inCodeBlock := false
 
-	flushParagraph := func() {
-		if currentParagraph.Len() > 0 {
-			result = append(result, strings.TrimSpace(currentParagraph.String()))
-			currentParagraph.Reset()
+	flushBlock := func() {
+		if currentBlock.Len() > 0 {
+			result = append(result, strings.TrimSpace(currentBlock.String()))
+			currentBlock.Reset()
 		}
 	}
 
-	for i, line := range lines {
+	for _, line := range lines {
 		trimmedLine := strings.TrimSpace(line)
 
 		// Track code blocks
-		if strings.HasPrefix(trimmedLine, "```") {
-			flushParagraph()
+		if codeBlockPattern.MatchString(line) {
+			flushBlock()
 			inCodeBlock = !inCodeBlock
 			result = append(result, line)
 			continue
@@ -343,41 +349,46 @@ func normalizeMarkdownText(text string) string {
 			continue
 		}
 
-		// Empty line = paragraph break
+		// Empty line = end of current block
 		if trimmedLine == "" {
-			flushParagraph()
+			flushBlock()
 			result = append(result, "")
 			continue
 		}
 
-		// Structural elements (headers, lists, tables) - preserve as separate lines
-		if structuralPatterns.MatchString(line) {
-			flushParagraph()
+		// Headers - always standalone
+		if headerPattern.MatchString(line) {
+			flushBlock()
 			result = append(result, line)
 			continue
 		}
 
-		// Check if this line starts a new structural section
-		// (previous line was empty or structural)
-		if i > 0 {
-			prevTrimmed := strings.TrimSpace(lines[i-1])
-			prevIsStructural := prevTrimmed == "" || structuralPatterns.MatchString(lines[i-1])
-
-			if prevIsStructural {
-				// This is the start of a new paragraph
-				flushParagraph()
-			}
+		// Tables - always standalone (each line)
+		if tablePattern.MatchString(line) {
+			flushBlock()
+			result = append(result, line)
+			continue
 		}
 
-		// Join with previous content in paragraph
-		if currentParagraph.Len() > 0 {
-			currentParagraph.WriteString(" ")
+		// List item start
+		if listPattern.MatchString(line) {
+			flushBlock()
+			currentBlock.WriteString(trimmedLine)
+			continue
 		}
-		currentParagraph.WriteString(trimmedLine)
+
+		// Continuation of list item or paragraph
+		if currentBlock.Len() > 0 {
+			currentBlock.WriteString(" ")
+			currentBlock.WriteString(trimmedLine)
+		} else {
+			// Start of a new paragraph
+			currentBlock.WriteString(trimmedLine)
+		}
 	}
 
-	// Flush remaining paragraph
-	flushParagraph()
+	// Flush remaining block
+	flushBlock()
 
 	return strings.Join(result, "\n")
 }
