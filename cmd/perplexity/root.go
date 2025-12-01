@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/diogo/perplexity-go/internal/auth"
+	"github.com/mattn/go-isatty"
 	"github.com/diogo/perplexity-go/internal/config"
 	"github.com/diogo/perplexity-go/internal/history"
 	"github.com/diogo/perplexity-go/internal/ui"
@@ -28,6 +30,7 @@ var (
 	flagNoStream   bool
 	flagIncognito  bool
 	flagOutputFile string
+	flagInputFile  string
 	flagCookieFile string
 	flagVerbose    bool
 
@@ -46,10 +49,14 @@ var rootCmd = &cobra.Command{
 It allows you to perform AI-powered searches directly from your terminal
 with support for multiple models, streaming output, and file attachments.
 
+The query can be provided as command-line arguments or via stdin (pipe).
+
 Examples:
   perplexity "What is the capital of France?"
   perplexity "Explain quantum computing" --model gpt5 --mode pro
-  perplexity "Latest news on AI" --sources web,scholar --stream`,
+  perplexity "Latest news on AI" --sources web,scholar --stream
+  echo "What is Go?" | perplexity
+  cat question.txt | perplexity --mode pro`,
 	Args: cobra.ArbitraryArgs,
 	RunE: runQuery,
 }
@@ -71,6 +78,7 @@ func init() {
 	rootCmd.Flags().BoolVar(&flagNoStream, "no-stream", false, "Disable streaming output")
 	rootCmd.Flags().BoolVarP(&flagIncognito, "incognito", "i", false, "Don't save to history")
 	rootCmd.Flags().StringVarP(&flagOutputFile, "output", "o", "", "Save response to file")
+	rootCmd.Flags().StringVarP(&flagInputFile, "file", "f", "", "Read query from file (takes precedence over args/stdin)")
 	rootCmd.Flags().StringVarP(&flagCookieFile, "cookies", "c", "", "Path to cookies.json file")
 	rootCmd.Flags().BoolVarP(&flagVerbose, "verbose", "v", false, "Verbose output")
 
@@ -107,12 +115,33 @@ func initConfig() {
 }
 
 func runQuery(cmd *cobra.Command, args []string) error {
-	// Check if query provided
-	if len(args) == 0 {
-		return cmd.Help()
+	var query string
+	var err error
+
+	// Priority: -f/--file > args > stdin
+	// 1. Check if -f/--file flag is provided
+	if flagInputFile != "" {
+		query, err = getQueryFromFile(flagInputFile)
+		if err != nil {
+			render.RenderError(err)
+			return err
+		}
 	}
 
-	query := strings.Join(args, " ")
+	// 2. If query is still empty, try args or stdin
+	if query == "" {
+		isTerminal := isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
+		query, err = getQueryFromInput(args, os.Stdin, isTerminal)
+		if err != nil {
+			render.RenderError(err)
+			return err
+		}
+	}
+
+	// If query is still empty, show help
+	if query == "" {
+		return cmd.Help()
+	}
 
 	// Determine cookie file
 	cookieFile := cfg.CookieFile
@@ -332,4 +361,37 @@ func truncateResponse(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+// getQueryFromInput extracts the query from command-line args or stdin.
+// This function is exported for testing purposes.
+func getQueryFromInput(args []string, stdin io.Reader, isTerminal bool) (string, error) {
+	if len(args) > 0 {
+		return strings.Join(args, " "), nil
+	}
+
+	// If stdin is not a terminal, try to read from it
+	if !isTerminal {
+		data, err := io.ReadAll(stdin)
+		if err != nil {
+			return "", fmt.Errorf("failed to read from stdin: %w", err)
+		}
+		return strings.TrimSpace(string(data)), nil
+	}
+
+	return "", nil
+}
+
+// getQueryFromFile reads the query content from a file.
+// Returns the trimmed content or an error if the file cannot be read.
+func getQueryFromFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to read input file %s: %w", path, err)
+	}
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return "", fmt.Errorf("input file %s is empty", path)
+	}
+	return content, nil
 }
