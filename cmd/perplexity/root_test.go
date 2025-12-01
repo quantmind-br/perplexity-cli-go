@@ -1083,6 +1083,190 @@ func TestRunQueryIntegration(t *testing.T) {
 	})
 }
 
+// TestQueryFileWithEmptyContent tests edge case of empty file
+func TestQueryFileWithEmptyContent(t *testing.T) {
+	tempDir := t.TempDir()
+	emptyFile := filepath.Join(tempDir, "empty.txt")
+
+	// Create empty file
+	err := os.WriteFile(emptyFile, []byte(""), 0644)
+	if err != nil {
+		t.Fatalf("failed to create empty file: %v", err)
+	}
+
+	// Try to read empty file - should return error
+	_, err = getQueryFromFile(emptyFile)
+	if err == nil {
+		t.Error("expected error for empty file, got nil")
+	}
+	if !strings.Contains(err.Error(), "is empty") {
+		t.Errorf("expected 'is empty' in error, got %v", err)
+	}
+}
+
+// TestBuildSearchOptionsWithAllFlags tests buildSearchOptions with all flags set
+func TestBuildSearchOptionsWithAllFlags(t *testing.T) {
+	// Save current global state
+	origCfg := cfg
+	origFlagModel := flagModel
+	origFlagMode := flagMode
+	origFlagLanguage := flagLanguage
+	origFlagSources := flagSources
+	origFlagIncognito := flagIncognito
+
+	defer func() {
+		cfg = origCfg
+		flagModel = origFlagModel
+		flagMode = origFlagMode
+		flagLanguage = origFlagLanguage
+		flagSources = origFlagSources
+		flagIncognito = origFlagIncognito
+	}()
+
+	cfg = &config.Config{
+		DefaultModel:     models.ModelPplxPro,
+		DefaultMode:      models.ModeDefault,
+		DefaultLanguage:  "en-US",
+		DefaultSources:   []models.Source{models.SourceWeb},
+		Incognito:        false,
+	}
+
+	// Set all flags
+	flagModel = "gpt51"
+	flagMode = "pro"
+	flagLanguage = "pt-BR"
+	flagSources = "web,scholar,social"
+	flagIncognito = true
+
+	opts := buildSearchOptions("test query")
+
+	if opts.Model != models.ModelGPT51 {
+		t.Errorf("Expected model gpt51, got %q", opts.Model)
+	}
+	if opts.Mode != models.ModePro {
+		t.Errorf("Expected mode pro, got %q", opts.Mode)
+	}
+	if opts.Language != "pt-BR" {
+		t.Errorf("Expected language pt-BR, got %q", opts.Language)
+	}
+	if len(opts.Sources) != 3 {
+		t.Errorf("Expected 3 sources, got %d", len(opts.Sources))
+	}
+	if opts.Incognito != true {
+		t.Errorf("Expected incognito true, got %v", opts.Incognito)
+	}
+}
+
+// TestTruncateResponseEdgeCases tests edge cases for truncateResponse
+func TestTruncateResponseEdgeCases(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		maxLen int
+		want   string
+	}{
+		{"exact match", "hello", 5, "hello"},
+		{"one less", "hello", 4, "hell..."},
+		{"one more", "hello", 6, "hello"},
+		{"zero length", "", 10, ""},
+		{"zero max", "hello", 0, "..."},
+		{"very long string", strings.Repeat("x", 1000), 10, strings.Repeat("x", 10) + "..."},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := truncateResponse(tt.input, tt.maxLen)
+			if got != tt.want {
+				t.Errorf("truncateResponse(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestFlagParsing tests flag parsing behavior
+func TestFlagParsing(t *testing.T) {
+	// Test that we can parse various flag combinations
+	flagTests := []struct {
+		name     string
+		flags    map[string]string
+		validate func(models.SearchOptions) bool
+	}{
+		{
+			name: "model flag",
+			flags: map[string]string{
+				"model": "gpt51",
+			},
+			validate: func(opts models.SearchOptions) bool {
+				return opts.Model == models.ModelGPT51
+			},
+		},
+		{
+			name: "mode flag",
+			flags: map[string]string{
+				"mode": "reasoning",
+			},
+			validate: func(opts models.SearchOptions) bool {
+				return opts.Mode == models.ModeReasoning
+			},
+		},
+		{
+			name: "language flag",
+			flags: map[string]string{
+				"language": "fr-FR",
+			},
+			validate: func(opts models.SearchOptions) bool {
+				return opts.Language == "fr-FR"
+			},
+		},
+		{
+			name: "sources flag",
+			flags: map[string]string{
+				"sources": "web,scholar",
+			},
+			validate: func(opts models.SearchOptions) bool {
+				return len(opts.Sources) == 2
+			},
+		},
+	}
+
+	for _, tt := range flagTests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Save and restore global state
+			origCfg := cfg
+			origFlagModel := flagModel
+			origFlagMode := flagMode
+			origFlagLanguage := flagLanguage
+			origFlagSources := flagSources
+
+			defer func() {
+				cfg = origCfg
+				flagModel = origFlagModel
+				flagMode = origFlagMode
+				flagLanguage = origFlagLanguage
+				flagSources = origFlagSources
+			}()
+
+			cfg = &config.Config{
+				DefaultModel:     models.ModelPplxPro,
+				DefaultMode:      models.ModeDefault,
+				DefaultLanguage:  "en-US",
+				DefaultSources:   []models.Source{models.SourceWeb},
+			}
+
+			// Set flags
+			flagModel = tt.flags["model"]
+			flagMode = tt.flags["mode"]
+			flagLanguage = tt.flags["language"]
+			flagSources = tt.flags["sources"]
+
+			opts := buildSearchOptions("test")
+			if !tt.validate(opts) {
+				t.Errorf("Flag validation failed for %s", tt.name)
+			}
+		})
+	}
+}
+
 // TestExecute tests the Execute function
 func TestExecute(t *testing.T) {
 	// Save original rootCmd

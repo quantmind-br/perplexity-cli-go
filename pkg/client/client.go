@@ -12,7 +12,7 @@ import (
 
 // Client is the main Perplexity API client.
 type Client struct {
-	http          *HTTPClient
+	http          HTTPClientInterface
 	cookies       []*http.Cookie
 	csrfToken     string
 	defaultModel  models.Model
@@ -90,6 +90,21 @@ func NewWithCookies(cookies []*http.Cookie) (*Client, error) {
 	cfg := DefaultConfig()
 	cfg.Cookies = cookies
 	return New(cfg)
+}
+
+// NewWithHTTPClient creates a client with a custom HTTP client (for testing/mocking).
+func NewWithHTTPClient(httpClient HTTPClientInterface) *Client {
+	return &Client{
+		http:            httpClient,
+		defaultModel:    DefaultConfig().DefaultModel,
+		defaultMode:     DefaultConfig().DefaultMode,
+		defaultLang:     DefaultConfig().Language,
+		defaultSrcs:     DefaultConfig().Sources,
+		proQueries:      0,
+		fileUploads:     0,
+		maxProQueries:   5,
+		maxFileUploads:  10,
+	}
 }
 
 // SetCookies sets the client cookies.
