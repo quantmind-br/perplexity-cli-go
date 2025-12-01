@@ -49,14 +49,15 @@ var rootCmd = &cobra.Command{
 It allows you to perform AI-powered searches directly from your terminal
 with support for multiple models, streaming output, and file attachments.
 
-The query can be provided as command-line arguments or via stdin (pipe).
+The query can be provided as command-line arguments, from a file (-f), or via stdin (pipe).
 
 Examples:
   perplexity "What is the capital of France?"
   perplexity "Explain quantum computing" --model gpt5 --mode pro
   perplexity "Latest news on AI" --sources web,scholar --stream
   echo "What is Go?" | perplexity
-  cat question.txt | perplexity --mode pro`,
+  perplexity -f prompt.md --mode pro
+  perplexity -f question.txt -o answer.md`,
 	Args: cobra.ArbitraryArgs,
 	RunE: runQuery,
 }

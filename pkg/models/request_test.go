@@ -31,18 +31,26 @@ func TestDefaultSearchOptions(t *testing.T) {
 
 func TestSearchRequestJSON(t *testing.T) {
 	req := SearchRequest{
-		Version:  "2.18",
-		Source:   "default",
-		Language: "en-US",
-		Mode:     "copilot",
-		Query:    "test",
+		Params: SearchParams{
+			Version:  "2.18",
+			Source:   "default",
+			Language: "en-US",
+			Mode:     "copilot",
+		},
+		QueryStr: "test",
 	}
 
-	if req.Version != "2.18" {
-		t.Errorf("Version = %q, want %q", req.Version, "2.18")
+	if req.Params.Version != "2.18" {
+		t.Errorf("Params.Version = %q, want %q", req.Params.Version, "2.18")
 	}
-	if req.Query != "test" {
-		t.Errorf("Query = %q, want %q", req.Query, "test")
+	if req.QueryStr != "test" {
+		t.Errorf("QueryStr = %q, want %q", req.QueryStr, "test")
+	}
+	if req.Params.Language != "en-US" {
+		t.Errorf("Params.Language = %q, want %q", req.Params.Language, "en-US")
+	}
+	if req.Params.Mode != "copilot" {
+		t.Errorf("Params.Mode = %q, want %q", req.Params.Mode, "copilot")
 	}
 }
 
