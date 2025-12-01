@@ -37,8 +37,8 @@ func (c *Client) buildSearchPayload(opts models.SearchOptions) ([]byte, error) {
 		modelPref = "pplx_alpha"
 	}
 
-	// Handle special gpt5_thinking model (forces fast mode regardless of mode setting)
-	if opts.Model == models.ModelGPT5Thinking {
+	// Handle special thinking models (forces fast mode regardless of mode setting)
+	if opts.Model == models.ModelGPT51Thinking {
 		effectiveMode = "concise"
 		modelPref = "turbo"
 	}
@@ -54,31 +54,33 @@ func (c *Client) buildSearchPayload(opts models.SearchOptions) ([]byte, error) {
 
 	// Build request payload
 	req := models.SearchRequest{
-		Version:            "2.18",
-		Source:             "default",
-		Language:           opts.Language,
-		Timezone:           "America/New_York",
-		SearchFocus:        "internet",
-		FrontendUUID:       frontendUUID,
-		Mode:               effectiveMode,
-		IsIncognito:        opts.Incognito,
-		Query:              opts.Query,
-		Sources:            sources,
-		IsProReasoningMode: isProReasoning,
+		Params: models.SearchParams{
+			Version:            "2.18",
+			Source:             "default",
+			Language:           opts.Language,
+			Timezone:           "America/New_York",
+			SearchFocus:        "internet",
+			FrontendUUID:       frontendUUID,
+			Mode:               effectiveMode,
+			IsIncognito:        opts.Incognito,
+			Sources:            sources,
+			IsProReasoningMode: isProReasoning,
+		},
+		QueryStr: opts.Query,
 	}
 
 	// Only set model preference if not using turbo
 	if modelPref != "" && modelPref != "turbo" {
-		req.ModelPreference = &modelPref
+		req.Params.ModelPreference = &modelPref
 	} else if modelPref == "turbo" {
 		// For fast mode, explicitly set turbo
-		req.ModelPreference = &modelPref
+		req.Params.ModelPreference = &modelPref
 	}
 
 	// Handle follow-up context
 	if opts.FollowUp != nil {
-		req.BackendUUID = opts.FollowUp.BackendUUID
-		req.Attachments = opts.FollowUp.Attachments
+		req.Params.BackendUUID = opts.FollowUp.BackendUUID
+		req.Params.Attachments = opts.FollowUp.Attachments
 	}
 
 	return json.Marshal(req)

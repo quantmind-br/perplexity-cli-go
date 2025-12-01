@@ -8,15 +8,19 @@ func TestIsValidModel(t *testing.T) {
 		model Model
 		want  bool
 	}{
+		// Pro models
 		{"valid pplx_pro", ModelPplxPro, true},
-		{"valid gpt5", ModelGPT5, true},
-		{"valid claude45sonnet", ModelClaude45Sonnet, true},
+		{"valid gpt51", ModelGPT51, true},
+		{"valid grok41nonreasoning", ModelGrok41NonReasoning, true},
 		{"valid experimental", ModelExperimental, true},
-		{"valid sonar", ModelSonar, true},
-		{"valid grok4", ModelGrok4, true},
-		{"valid gemini2flash", ModelGemini2Flash, true},
-		{"valid gpt5_thinking", ModelGPT5Thinking, true},
+		{"valid claude45sonnet", ModelClaude45Sonnet, true},
+		// Reasoning models
+		{"valid gemini30pro", ModelGemini30Pro, true},
+		{"valid gpt51_thinking", ModelGPT51Thinking, true},
+		{"valid grok41reasoning", ModelGrok41Reasoning, true},
+		{"valid kimik2thinking", ModelKimiK2Thinking, true},
 		{"valid claude45sonnetthinking", ModelClaude45SonnetThink, true},
+		// Invalid
 		{"invalid model", Model("invalid_model"), false},
 		{"empty model", Model(""), false},
 	}
@@ -80,14 +84,55 @@ func TestIsValidMode(t *testing.T) {
 }
 
 func TestAvailableModels(t *testing.T) {
-	if len(AvailableModels) != 9 {
-		t.Errorf("Expected 9 available models, got %d", len(AvailableModels))
+	expectedTotal := len(AvailableProModels) + len(AvailableReasoningModels)
+	if len(AvailableModels) != expectedTotal {
+		t.Errorf("Expected %d available models, got %d", expectedTotal, len(AvailableModels))
 	}
 
 	// Verify all models in the list are valid
 	for _, m := range AvailableModels {
 		if !IsValidModel(m) {
 			t.Errorf("Model %q in AvailableModels is not valid", m)
+		}
+	}
+}
+
+func TestAvailableProModels(t *testing.T) {
+	if len(AvailableProModels) != 5 {
+		t.Errorf("Expected 5 pro models, got %d", len(AvailableProModels))
+	}
+
+	expectedModels := []Model{
+		ModelPplxPro,
+		ModelGPT51,
+		ModelGrok41NonReasoning,
+		ModelExperimental,
+		ModelClaude45Sonnet,
+	}
+
+	for i, m := range AvailableProModels {
+		if m != expectedModels[i] {
+			t.Errorf("AvailableProModels[%d] = %q, want %q", i, m, expectedModels[i])
+		}
+	}
+}
+
+func TestAvailableReasoningModels(t *testing.T) {
+	if len(AvailableReasoningModels) != 5 {
+		t.Errorf("Expected 5 reasoning models, got %d", len(AvailableReasoningModels))
+	}
+
+	expectedModels := []Model{
+		ModelGemini30Pro,
+		ModelGPT51Thinking,
+		ModelGrok41Reasoning,
+		ModelKimiK2Thinking,
+		ModelClaude45SonnetThink,
+	}
+
+	for i, m := range AvailableReasoningModels {
+		if m != expectedModels[i] {
+			t.Errorf("AvailableReasoningModels[%d] = %q, want %q", i, m, expectedModels[i])
 		}
 	}
 }

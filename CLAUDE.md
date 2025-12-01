@@ -60,7 +60,7 @@ go test ./... -run TestName   # Run specific test
 
 # Run directly
 make run ARGS='"What is Go?"'
-./build/perplexity "query" --model gpt5 --mode pro --stream
+./build/perplexity "query" --model gpt51 --mode pro --stream
 ```
 
 ## API Implementation Details
@@ -79,10 +79,15 @@ make run ARGS='"What is Go?"'
 | reasoning      | copilot    | + is_pro_reasoning_mode=true |
 | deep-research  | copilot    | pplx_alpha      |
 
-**Special case:** `gpt5_thinking` model forces `concise` + `turbo` regardless of mode.
+**Special case:** `gpt51_thinking` model forces `concise` + `turbo` regardless of mode.
 
 ### Available Models
-`pplx_pro`, `experimental`, `sonar`, `grok4`, `gpt5`, `claude45sonnet`, `gemini2flash`, `gpt5_thinking`, `claude45sonnetthinking`
+
+**Pro Mode:**
+`pplx_pro`, `gpt51`, `grok41nonreasoning`, `experimental`, `claude45sonnet`
+
+**Reasoning Mode:**
+`gemini30pro`, `gpt51_thinking`, `grok41reasoning`, `kimik2thinking`, `claude45sonnetthinking`
 
 ### Configuration
 - Config file: `~/.perplexity-cli/config.json`

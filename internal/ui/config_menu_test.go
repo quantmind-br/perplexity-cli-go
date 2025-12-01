@@ -9,7 +9,7 @@ import (
 
 func TestBuildConfigMenuItems(t *testing.T) {
 	cfg := &config.Config{
-		DefaultModel:    models.ModelGPT5,
+		DefaultModel:    models.ModelGPT51,
 		DefaultMode:     models.ModePro,
 		DefaultLanguage: "pt-BR",
 		DefaultSources:  []models.Source{models.SourceWeb, models.SourceScholar},
@@ -27,7 +27,7 @@ func TestBuildConfigMenuItems(t *testing.T) {
 
 	// Verify each item
 	expectedItems := map[string]string{
-		"default_model":    "gpt5",
+		"default_model":    "gpt51",
 		"default_mode":     "pro",
 		"default_language": "pt-BR",
 		"default_sources":  "web, scholar",
@@ -117,7 +117,7 @@ func TestConfigMenuItem_Fields(t *testing.T) {
 
 func TestHandleReset_ConfigValues(t *testing.T) {
 	cfg := &config.Config{
-		DefaultModel:    models.ModelGPT5,
+		DefaultModel:    models.ModelGPT51,
 		DefaultMode:     models.ModeReasoning,
 		DefaultLanguage: "pt-BR",
 		DefaultSources:  []models.Source{models.SourceScholar},

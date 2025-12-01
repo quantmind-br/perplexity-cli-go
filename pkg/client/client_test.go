@@ -113,13 +113,13 @@ func TestClientSetDefaults(t *testing.T) {
 	defer client.Close()
 
 	// Change defaults
-	client.SetDefaultModel(models.ModelGPT5)
+	client.SetDefaultModel(models.ModelGPT51)
 	client.SetDefaultMode(models.ModeFast)
 	client.SetDefaultLanguage("pt-BR")
 	client.SetDefaultSources([]models.Source{models.SourceWeb, models.SourceScholar})
 
-	if client.defaultModel != models.ModelGPT5 {
-		t.Errorf("defaultModel = %q, want %q", client.defaultModel, models.ModelGPT5)
+	if client.defaultModel != models.ModelGPT51 {
+		t.Errorf("defaultModel = %q, want %q", client.defaultModel, models.ModelGPT51)
 	}
 	if client.defaultMode != models.ModeFast {
 		t.Errorf("defaultMode = %q, want %q", client.defaultMode, models.ModeFast)
@@ -173,7 +173,7 @@ func TestClientApplyDefaultsWithExisting(t *testing.T) {
 	opts := models.SearchOptions{
 		Query:    "test query",
 		Mode:     models.ModeFast,
-		Model:    models.ModelGPT5,
+		Model:    models.ModelGPT51,
 		Language: "pt-BR",
 		Sources:  []models.Source{models.SourceScholar},
 	}
@@ -183,8 +183,8 @@ func TestClientApplyDefaultsWithExisting(t *testing.T) {
 	if opts.Mode != models.ModeFast {
 		t.Errorf("Mode = %q, want %q (should not change)", opts.Mode, models.ModeFast)
 	}
-	if opts.Model != models.ModelGPT5 {
-		t.Errorf("Model = %q, want %q (should not change)", opts.Model, models.ModelGPT5)
+	if opts.Model != models.ModelGPT51 {
+		t.Errorf("Model = %q, want %q (should not change)", opts.Model, models.ModelGPT51)
 	}
 	if opts.Language != "pt-BR" {
 		t.Errorf("Language = %q, want %q (should not change)", opts.Language, "pt-BR")

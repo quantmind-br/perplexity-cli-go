@@ -33,14 +33,14 @@ func TestBuildSearchPayload(t *testing.T) {
 		t.Fatalf("Failed to unmarshal payload: %v", err)
 	}
 
-	if req.Query != "test query" {
-		t.Errorf("Query = %q, want %q", req.Query, "test query")
+	if req.QueryStr != "test query" {
+		t.Errorf("Query = %q, want %q", req.QueryStr, "test query")
 	}
-	if req.Language != "en-US" {
-		t.Errorf("Language = %q, want %q", req.Language, "en-US")
+	if req.Params.Language != "en-US" {
+		t.Errorf("Language = %q, want %q", req.Params.Language, "en-US")
 	}
-	if req.Mode != "copilot" {
-		t.Errorf("Mode = %q, want %q", req.Mode, "copilot")
+	if req.Params.Mode != "copilot" {
+		t.Errorf("Mode = %q, want %q", req.Params.Mode, "copilot")
 	}
 }
 
@@ -67,10 +67,10 @@ func TestBuildSearchPayloadFastMode(t *testing.T) {
 		t.Fatalf("Failed to unmarshal payload: %v", err)
 	}
 
-	if req.Mode != "concise" {
-		t.Errorf("Mode = %q, want %q for fast mode", req.Mode, "concise")
+	if req.Params.Mode != "concise" {
+		t.Errorf("Mode = %q, want %q for fast mode", req.Params.Mode, "concise")
 	}
-	if req.ModelPreference == nil || *req.ModelPreference != "turbo" {
+	if req.Params.ModelPreference == nil || *req.Params.ModelPreference != "turbo" {
 		t.Errorf("ModelPreference should be turbo for fast mode")
 	}
 }
@@ -86,7 +86,7 @@ func TestBuildSearchPayloadGPT5Thinking(t *testing.T) {
 	opts := models.SearchOptions{
 		Query: "test query",
 		Mode:  models.ModeDefault,
-		Model: models.ModelGPT5Thinking,
+		Model: models.ModelGPT51Thinking,
 	}
 
 	payload, err := client.buildSearchPayload(opts)
@@ -100,10 +100,10 @@ func TestBuildSearchPayloadGPT5Thinking(t *testing.T) {
 	}
 
 	// GPT5Thinking should force concise mode with turbo
-	if req.Mode != "concise" {
-		t.Errorf("Mode = %q, want %q for gpt5_thinking", req.Mode, "concise")
+	if req.Params.Mode != "concise" {
+		t.Errorf("Mode = %q, want %q for gpt5_thinking", req.Params.Mode, "concise")
 	}
-	if req.ModelPreference == nil || *req.ModelPreference != "turbo" {
+	if req.Params.ModelPreference == nil || *req.Params.ModelPreference != "turbo" {
 		t.Errorf("ModelPreference should be turbo for gpt5_thinking")
 	}
 }
@@ -131,10 +131,10 @@ func TestBuildSearchPayloadReasoningMode(t *testing.T) {
 		t.Fatalf("Failed to unmarshal payload: %v", err)
 	}
 
-	if req.Mode != "copilot" {
-		t.Errorf("Mode = %q, want %q", req.Mode, "copilot")
+	if req.Params.Mode != "copilot" {
+		t.Errorf("Mode = %q, want %q", req.Params.Mode, "copilot")
 	}
-	if !req.IsProReasoningMode {
+	if !req.Params.IsProReasoningMode {
 		t.Error("IsProReasoningMode should be true for reasoning mode")
 	}
 }
@@ -162,10 +162,10 @@ func TestBuildSearchPayloadDeepResearch(t *testing.T) {
 		t.Fatalf("Failed to unmarshal payload: %v", err)
 	}
 
-	if req.Mode != "copilot" {
-		t.Errorf("Mode = %q, want %q", req.Mode, "copilot")
+	if req.Params.Mode != "copilot" {
+		t.Errorf("Mode = %q, want %q", req.Params.Mode, "copilot")
 	}
-	if req.ModelPreference == nil || *req.ModelPreference != "pplx_alpha" {
+	if req.Params.ModelPreference == nil || *req.Params.ModelPreference != "pplx_alpha" {
 		t.Errorf("ModelPreference should be pplx_alpha for deep-research")
 	}
 }
@@ -199,11 +199,11 @@ func TestBuildSearchPayloadWithFollowUp(t *testing.T) {
 		t.Fatalf("Failed to unmarshal payload: %v", err)
 	}
 
-	if req.BackendUUID != "test-uuid-123" {
-		t.Errorf("BackendUUID = %q, want %q", req.BackendUUID, "test-uuid-123")
+	if req.Params.BackendUUID != "test-uuid-123" {
+		t.Errorf("BackendUUID = %q, want %q", req.Params.BackendUUID, "test-uuid-123")
 	}
-	if len(req.Attachments) != 1 {
-		t.Errorf("len(Attachments) = %d, want 1", len(req.Attachments))
+	if len(req.Params.Attachments) != 1 {
+		t.Errorf("len(Attachments) = %d, want 1", len(req.Params.Attachments))
 	}
 }
 

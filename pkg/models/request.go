@@ -1,28 +1,34 @@
 package models
 
+// SearchParams represents the nested parameters in a search request.
+type SearchParams struct {
+	Version            string       `json:"version"`
+	Source             string       `json:"source"`
+	FrontendSessionID  string       `json:"frontend_session_id,omitempty"`
+	Language           string       `json:"language"`
+	Timezone           string       `json:"timezone"`
+	SearchFocus        string       `json:"search_focus"`
+	FrontendUUID       string       `json:"frontend_uuid,omitempty"`
+	GptUUID            string       `json:"gpt_uuid,omitempty"`
+	ConversationMode   string       `json:"conversation_mode,omitempty"`
+	Mode               string       `json:"mode"`
+	IsIncognito        bool         `json:"is_incognito"`
+	InPage             string       `json:"in_page,omitempty"`
+	ModelPreference    *string      `json:"model_preference,omitempty"`
+	IsProReasoningMode bool         `json:"is_pro_reasoning_mode,omitempty"`
+	Sources            []string     `json:"sources,omitempty"`
+	Attachments        []Attachment `json:"attachments,omitempty"`
+	BackendUUID        string       `json:"backend_uuid,omitempty"`
+	ReadWriteToken     *string      `json:"read_write_token,omitempty"`
+	FunctioningMode    string       `json:"functioning_mode,omitempty"`
+	UseInhouseModel    bool         `json:"use_inhouse_model,omitempty"`
+	DslQuery           string       `json:"dsl_query"`
+}
+
 // SearchRequest represents the payload for a Perplexity search query.
 type SearchRequest struct {
-	Version              string        `json:"version"`
-	Source               string        `json:"source"`
-	FrontendSessionID    string        `json:"frontend_session_id,omitempty"`
-	Language             string        `json:"language"`
-	Timezone             string        `json:"timezone"`
-	SearchFocus          string        `json:"search_focus"`
-	FrontendUUID         string        `json:"frontend_uuid,omitempty"`
-	GptUUID              string        `json:"gpt_uuid,omitempty"`
-	ConversationMode     string        `json:"conversation_mode,omitempty"`
-	Mode                 string        `json:"mode"`
-	IsIncognito          bool          `json:"is_incognito"`
-	InPage               string        `json:"in_page,omitempty"`
-	Query                string        `json:"query_str"`
-	ModelPreference      *string       `json:"model_preference,omitempty"`
-	IsProReasoningMode   bool          `json:"is_pro_reasoning_mode,omitempty"`
-	Sources              []string      `json:"sources,omitempty"`
-	Attachments          []Attachment  `json:"attachments,omitempty"`
-	BackendUUID          string        `json:"backend_uuid,omitempty"`
-	ReadWriteToken       *string       `json:"read_write_token,omitempty"`
-	FunctioningMode      string        `json:"functioning_mode,omitempty"`
-	UseInhouseModel      bool          `json:"use_inhouse_model,omitempty"`
+	Params   SearchParams `json:"params"`
+	QueryStr string       `json:"query_str"`
 }
 
 // Attachment represents a file attachment in the request.

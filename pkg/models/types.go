@@ -15,16 +15,22 @@ const (
 // Model represents available AI models.
 type Model string
 
+// Pro mode models
 const (
-	ModelPplxPro              Model = "pplx_pro"
-	ModelExperimental         Model = "experimental"
-	ModelSonar                Model = "sonar"
-	ModelGrok4                Model = "grok4"
-	ModelGPT5                 Model = "gpt5"
-	ModelClaude45Sonnet       Model = "claude45sonnet"
-	ModelGemini2Flash         Model = "gemini2flash"
-	ModelGPT5Thinking         Model = "gpt5_thinking"
-	ModelClaude45SonnetThink  Model = "claude45sonnetthinking"
+	ModelPplxPro            Model = "pplx_pro"
+	ModelGPT51              Model = "gpt51"
+	ModelGrok41NonReasoning Model = "grok41nonreasoning"
+	ModelExperimental       Model = "experimental"
+	ModelClaude45Sonnet     Model = "claude45sonnet"
+)
+
+// Reasoning mode models
+const (
+	ModelGemini30Pro         Model = "gemini30pro"
+	ModelGPT51Thinking       Model = "gpt51_thinking"
+	ModelGrok41Reasoning     Model = "grok41reasoning"
+	ModelKimiK2Thinking      Model = "kimik2thinking"
+	ModelClaude45SonnetThink Model = "claude45sonnetthinking"
 )
 
 // Source represents search sources.
@@ -36,18 +42,26 @@ const (
 	SourceSocial  Source = "social"
 )
 
-// AvailableModels contains all valid model names.
-var AvailableModels = []Model{
+// AvailableProModels contains models available for Pro mode.
+var AvailableProModels = []Model{
 	ModelPplxPro,
+	ModelGPT51,
+	ModelGrok41NonReasoning,
 	ModelExperimental,
-	ModelSonar,
-	ModelGrok4,
-	ModelGPT5,
 	ModelClaude45Sonnet,
-	ModelGemini2Flash,
-	ModelGPT5Thinking,
+}
+
+// AvailableReasoningModels contains models available for Reasoning mode.
+var AvailableReasoningModels = []Model{
+	ModelGemini30Pro,
+	ModelGPT51Thinking,
+	ModelGrok41Reasoning,
+	ModelKimiK2Thinking,
 	ModelClaude45SonnetThink,
 }
+
+// AvailableModels contains all valid model names.
+var AvailableModels = append(AvailableProModels, AvailableReasoningModels...)
 
 // AvailableSources contains all valid source names.
 var AvailableSources = []Source{
