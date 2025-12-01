@@ -47,12 +47,12 @@ func setupTestEnv(t *testing.T) (string, func()) {
 	return tmpDir, cleanup
 }
 
-func TestCookiesImportCmd_FileNotFound(t *testing.T) {
+func TestImportCookiesCmd_FileNotFound(t *testing.T) {
 	_, cleanup := setupTestEnv(t)
 	defer cleanup()
 
 	// Call RunE directly instead of Execute
-	err := cookiesImportCmd.RunE(cookiesImportCmd, []string{"/nonexistent/file.json"})
+	err := importCookiesCmd.RunE(importCookiesCmd, []string{"/nonexistent/file.json"})
 
 	if err == nil {
 		t.Error("Expected error for nonexistent file")
@@ -62,7 +62,7 @@ func TestCookiesImportCmd_FileNotFound(t *testing.T) {
 	}
 }
 
-func TestCookiesImportCmd_ValidJSON(t *testing.T) {
+func TestImportCookiesCmd_ValidJSON(t *testing.T) {
 	tmpDir, cleanup := setupTestEnv(t)
 	defer cleanup()
 
@@ -86,7 +86,7 @@ func TestCookiesImportCmd_ValidJSON(t *testing.T) {
 		t.Fatalf("Failed to write import file: %v", err)
 	}
 
-	err := cookiesImportCmd.RunE(cookiesImportCmd, []string{importFile})
+	err := importCookiesCmd.RunE(importCookiesCmd, []string{importFile})
 
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -98,7 +98,7 @@ func TestCookiesImportCmd_ValidJSON(t *testing.T) {
 	}
 }
 
-func TestCookiesImportCmd_NoCookies(t *testing.T) {
+func TestImportCookiesCmd_NoCookies(t *testing.T) {
 	tmpDir, cleanup := setupTestEnv(t)
 	defer cleanup()
 
@@ -116,7 +116,7 @@ func TestCookiesImportCmd_NoCookies(t *testing.T) {
 		t.Fatalf("Failed to write empty cookie file: %v", err)
 	}
 
-	err := cookiesImportCmd.RunE(cookiesImportCmd, []string{emptyCookieFile})
+	err := importCookiesCmd.RunE(importCookiesCmd, []string{emptyCookieFile})
 
 	if err == nil {
 		t.Error("Expected error for empty cookies")
@@ -126,7 +126,7 @@ func TestCookiesImportCmd_NoCookies(t *testing.T) {
 	}
 }
 
-func TestCookiesImportCmd_InvalidFormat(t *testing.T) {
+func TestImportCookiesCmd_InvalidFormat(t *testing.T) {
 	tmpDir, cleanup := setupTestEnv(t)
 	defer cleanup()
 
@@ -136,7 +136,7 @@ func TestCookiesImportCmd_InvalidFormat(t *testing.T) {
 		t.Fatalf("Failed to write invalid file: %v", err)
 	}
 
-	err := cookiesImportCmd.RunE(cookiesImportCmd, []string{invalidFile})
+	err := importCookiesCmd.RunE(importCookiesCmd, []string{invalidFile})
 
 	if err == nil {
 		t.Error("Expected error for invalid format")
@@ -270,8 +270,8 @@ func TestCookiesPathCmd(t *testing.T) {
 }
 
 func TestCookiesCmdStructure(t *testing.T) {
-	// Verify command structure
-	subcommands := []string{"import", "status", "clear", "path"}
+	// Verify command structure (import was moved to root level as import-cookies)
+	subcommands := []string{"status", "clear", "path"}
 
 	for _, name := range subcommands {
 		found := false
@@ -287,7 +287,7 @@ func TestCookiesCmdStructure(t *testing.T) {
 	}
 }
 
-func TestCookiesImportCmd_NetscapeFormat(t *testing.T) {
+func TestImportCookiesCmd_NetscapeFormat(t *testing.T) {
 	tmpDir, cleanup := setupTestEnv(t)
 	defer cleanup()
 
@@ -301,7 +301,7 @@ func TestCookiesImportCmd_NetscapeFormat(t *testing.T) {
 		t.Fatalf("Failed to write Netscape file: %v", err)
 	}
 
-	err := cookiesImportCmd.RunE(cookiesImportCmd, []string{importFile})
+	err := importCookiesCmd.RunE(importCookiesCmd, []string{importFile})
 
 	if err != nil {
 		t.Errorf("Unexpected error importing Netscape format: %v", err)
@@ -313,7 +313,7 @@ func TestCookiesImportCmd_NetscapeFormat(t *testing.T) {
 	}
 }
 
-func TestCookiesImportCmd_MissingCSRFToken(t *testing.T) {
+func TestImportCookiesCmd_MissingCSRFToken(t *testing.T) {
 	tmpDir, cleanup := setupTestEnv(t)
 	defer cleanup()
 
@@ -332,7 +332,7 @@ func TestCookiesImportCmd_MissingCSRFToken(t *testing.T) {
 	}
 
 	// Should succeed but show warning (warning is just printed, not returned as error)
-	err := cookiesImportCmd.RunE(cookiesImportCmd, []string{importFile})
+	err := importCookiesCmd.RunE(importCookiesCmd, []string{importFile})
 
 	if err != nil {
 		t.Errorf("Unexpected error: %v", err)
@@ -354,12 +354,12 @@ func TestCookiesCmd_Help(t *testing.T) {
 	}
 }
 
-func TestCookiesImportCmd_Help(t *testing.T) {
+func TestImportCookiesCmd_Help(t *testing.T) {
 	// Test that help text exists
-	if cookiesImportCmd.Short == "" {
-		t.Error("cookiesImportCmd should have a short description")
+	if importCookiesCmd.Short == "" {
+		t.Error("importCookiesCmd should have a short description")
 	}
-	if cookiesImportCmd.Long == "" {
-		t.Error("cookiesImportCmd should have a long description")
+	if importCookiesCmd.Long == "" {
+		t.Error("importCookiesCmd should have a long description")
 	}
 }

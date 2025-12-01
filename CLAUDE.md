@@ -100,7 +100,7 @@ make run ARGS='"What is Go?"'
 Cookies must be exported from browser (JSON format via extension or Netscape format). Required cookie: `next-auth.csrf-token`.
 
 ```bash
-perplexity cookies import cookies.json  # Import cookies
+perplexity import-cookies cookies.json  # Import cookies
 perplexity cookies status               # Check authentication
 perplexity cookies clear                # Clear saved cookies
 perplexity cookies path                 # Show cookie file path

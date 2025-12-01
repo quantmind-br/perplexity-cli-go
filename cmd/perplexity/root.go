@@ -88,6 +88,7 @@ func init() {
 	rootCmd.AddCommand(historyCmd)
 	rootCmd.AddCommand(cookiesCmd)
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(importCookiesCmd)
 }
 
 func initConfig() {
@@ -153,7 +154,7 @@ func runQuery(cmd *cobra.Command, args []string) error {
 	// Check if cookies exist
 	if _, err := os.Stat(cookieFile); os.IsNotExist(err) {
 		render.RenderError(fmt.Errorf("cookies file not found: %s", cookieFile))
-		render.RenderInfo("Run 'perplexity cookies import <file>' to import cookies from browser")
+		render.RenderInfo("Run 'perplexity import-cookies <file>' to import cookies from browser")
 		return fmt.Errorf("no cookies found")
 	}
 

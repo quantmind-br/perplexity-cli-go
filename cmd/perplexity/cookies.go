@@ -14,8 +14,8 @@ var cookiesCmd = &cobra.Command{
 	Long:  `Manage authentication cookies for Perplexity API access.`,
 }
 
-var cookiesImportCmd = &cobra.Command{
-	Use:   "import <file>",
+var importCookiesCmd = &cobra.Command{
+	Use:   "import-cookies <file>",
 	Short: "Import cookies from file",
 	Long: `Import cookies from a JSON or Netscape format file.
 
@@ -24,7 +24,7 @@ Supported formats:
   - Netscape: curl/wget format (cookies.txt)
 
 Example:
-  perplexity cookies import ~/Downloads/cookies.json`,
+  perplexity import-cookies ~/Downloads/cookies.json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		importFile := args[0]
@@ -76,7 +76,7 @@ var cookiesStatusCmd = &cobra.Command{
 		if _, err := os.Stat(cookieFile); os.IsNotExist(err) {
 			render.RenderWarning("Not authenticated")
 			render.RenderInfo(fmt.Sprintf("Cookie file not found: %s", cookieFile))
-			render.RenderInfo("Run 'perplexity cookies import <file>' to import cookies")
+			render.RenderInfo("Run 'perplexity import-cookies <file>' to import cookies")
 			return nil
 		}
 
@@ -139,7 +139,6 @@ var cookiesPathCmd = &cobra.Command{
 }
 
 func init() {
-	cookiesCmd.AddCommand(cookiesImportCmd)
 	cookiesCmd.AddCommand(cookiesStatusCmd)
 	cookiesCmd.AddCommand(cookiesClearCmd)
 	cookiesCmd.AddCommand(cookiesPathCmd)

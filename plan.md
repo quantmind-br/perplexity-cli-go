@@ -1,232 +1,214 @@
 ╭────────────────────────────────────────────────────────────────────────────╮
 │                                                                            │
-│    Refactoring/Design Plan: Implementação de Flags de I/O ( -o ,  -f )     │
+│    Refactoring/Design Plan: Modificação do Subcomando  cookies import      │
 │                                                                            │
 │   ## 1. Executive Summary & Goals                                          │
 │                                                                            │
-│   O objetivo deste plano é aprimorar a usabilidade do Perplexity CLI,      │
-│   adicionando funcionalidades para salvar a saída da query diretamente     │
-│   em um arquivo ( -o / --output ) e ler o conteúdo da query a partir       │
-│   de                                                                       │
-│   um arquivo ( -f / --file ). A implementação deve ser feita usando o      │
-│   framework Cobra existente.                                               │
+│   O objetivo principal deste plano é refatorar o comando do CLI para a     │
+│   importação de cookies, mudando sua estrutura de subcomando aninhado      │
+│   para uma notação de comando e subcomando separados.                      │
+│                                                                            │
+│   * Comando Atual (Obsoleto):  perplexity cookies import                   │
+│   path_to_cookies.json                                                     │
+│   * Comando Proposto (Novo):  perplexity import-cookies                    │
+│   path_to_cookies.json                                                     │
 │                                                                            │
 │   ### Key Goals:                                                           │
 │                                                                            │
-│   1. Adicionar a flag  -o  ou  --output  para salvar a resposta            │
-│   completa em um arquivo  .md  ou  .txt .                                  │
-│   2. Adicionar a flag  -f  ou  --file  para ler o conteúdo da query a      │
-│   partir de um arquivo, priorizando essa leitura sobre a query             │
-│   fornecida nos argumentos de linha de comando.                            │
-│   3. Garantir a compatibilidade do novo fluxo de input ( -f ) com a        │
-│   nova funcionalidade de output ( -o ).                                    │
+│   1. Mover a lógica de importação de cookies do subcomando  cookies        │
+│   import  para um novo comando de nível superior chamado  import-          │
+│   cookies .                                                                │
+│   2. Preservar a funcionalidade de importação existente, incluindo o       │
+│   tratamento de formatos JSON e Netscape e a validação de arquivos.        │
+│   3. Remover o subcomando  cookiesImportCmd  do comando pai                │
+│   cookiesCmd  após a migração.                                             │
+│   4. Garantir que todos os testes unitários relacionados à importação      │
+│   de cookies ( cookies_test.go ) sejam atualizados ou reconfigurados       │
+│   para validar o novo comando.                                             │
 │                                                                            │
 │   --------                                                                 │
 │                                                                            │
 │   ## 2. Current Situation Analysis                                         │
 │                                                                            │
-│   O núcleo do CLI é o  cmd/perplexity/root.go , onde a função              │
-│   runQuery  orquestra a obtenção da query, a configuração das opções       │
-│   de busca, a execução da busca e o salvamento da resposta no              │
-│   histórico.                                                               │
+│   O código para gerenciamento de cookies está centralizado em              │
+│   cmd/perplexity/cookies.go .                                              │
 │                                                                            │
-│   * Output Saving: A lógica para salvar o output ( flagOutputFile ,        │
-│   $307 ) já existe no final de  runQuery . No entanto, o  User Task        │
-│   exige a formalização da flag  -o  e a confirmação de que funciona        │
-│   para  .md  e  .txt . A implementação atual usa  os.WriteFile  com o      │
-│   flagOutputFile , o que é apropriado.                                     │
-│   * Query Input: A query é obtida pela função  getQueryFromInput(args,     │
-│   os.Stdin, isTerminal)  no  $153  de  cmd/perplexity/root.go , que        │
-│   prioriza os argumentos de linha de comando ( args ) e, como fallback,    │
-│   lê do  os.Stdin  se não for um terminal. A nova flag  -f / --file        │
-│   requer uma nova fonte de input que deve ser priorizada ou tratada        │
-│   antes da lógica de  getQueryFromInput .                                  │
-│   * Flags: A flag  flagOutputFile  já está declarada, mas a flag           │
-│   flagFile  (para input de arquivo) precisa ser criada e integrada ao      │
-│   rootCmd .                                                                │
+│   * Comando Principal de Cookies:  var cookiesCmd  é o comando pai         │
+│   para todas as operações de cookies ( status ,  clear ,  path ,           │
+│   import ).                                                                │
+│   * Lógica de Importação:  var cookiesImportCmd  contém toda a lógica      │
+│   de importação ( Args: cobra.ExactArgs(1) , leitura de arquivo,           │
+│   carregamento via  auth.LoadCookiesFromFile  ou  auth.                    │
+│   LoadCookiesFromNetscape , salvamento e mensagens de status).             │
+│   * Registro:  cookiesImportCmd  é registrado em  cookiesCmd  via          │
+│   cookiesCmd.AddCommand(cookiesImportCmd)  na função  init()  de           │
+│   cmd/perplexity/cookies.go .                                              │
+│   * Comando Raiz ( rootCmd ):  cookiesCmd  é adicionado ao  rootCmd        │
+│   em  cmd/perplexity/root.go  na função  initConfig() .                    │
+│   * Testes:  TestCookiesImportCmd_...  em  cmd/perplexity/cookies_test.    │
+│   go  dependem da variável  cookiesImportCmd  e sua estrutura.             │
+│                                                                            │
+│   A refatoração exigirá a extração de  cookiesImportCmd  e sua             │
+│   renomeação/reconfiguração para ser um comando de nível superior.         │
 │                                                                            │
 │   --------                                                                 │
 │                                                                            │
 │   ## 3. Proposed Solution / Refactoring Strategy                           │
 │                                                                            │
-│   A estratégia se concentrará em (1) adicionar a nova flag e (2)           │
-│   refatorar a obtenção da query para incorporar a leitura de arquivo       │
-│   antes de verificar argumentos ou stdin.                                  │
+│   A estratégia consiste em criar um novo comando de nível superior         │
+│   importCookiesCmd  que será adicionado diretamente ao  rootCmd , e        │
+│   então remover o subcomando antigo.                                       │
 │                                                                            │
 │   ### 3.1. High-Level Design / Architectural Overview                      │
 │                                                                            │
-│   O novo fluxo de obtenção da query dentro de  runQuery  será:             │
-│                                                                            │
-│   1. Verificar Flag  -f / --file : Se a flag estiver presente, ler o       │
-│   conteúdo do arquivo especificado. Se bem-sucedido, este é o  query       │
-│   final.                                                                   │
-│   2. Fallback para Argumentos/Stdin: Se a flag  -f  não estiver            │
-│   presente ou estiver vazia, usar a lógica existente (                     │
-│   getQueryFromInput ) para obter a query de  args  ou  stdin .             │
-│   3. Execução da Query: Se uma query válida for encontrada, prosseguir     │
-│   com a execução normal.                                                   │
+│   O novo comando  import-cookies  será um sibling de  config ,             │
+│   history                                                                  │
+│   , e  cookies .                                                           │
 │                                                                            │
 │                                                                            │
 │     ----------                                                             │
 │     graph TD                                                               │
-│         A[Start runQuery] --> B{Flag -f ou --file presente?};              │
-│         B -- Sim --> C[Ler Conteúdo do Arquivo];                           │
-│         C --> D{Leitura OK e Não Vazia?};                                  │
-│         D -- Sim --> G[query = Conteúdo do Arquivo];                       │
-│         D -- Não --> F[Tratar Erro/Query Vazia (Mostrar Ajuda)];           │
-│         B -- Não --> E{Obter Query de args/stdin (getQueryFromInput)};     │
-│         E --> H{query Vazia?};                                             │
-│         H -- Sim --> F;                                                    │
-│         H -- Não --> I[query = args/stdin content];                        │
-│         G --> J[Continuar com Execução da Query];                          │
-│         I --> J;                                                           │
-│         F --> K[Fim com Ajuda/Erro];                                       │
-│         J --> L[Executar Busca e Salvar em -o];                            │
+│         A[rootCmd: perplexity] --> B(config);                              │
+│         A --> C(history);                                                  │
+│         A --> D(cookies);                                                  │
+│         A --> E(version);                                                  │
+│         A --> F(import-cookies);                                           │
+│         D --> D1(status);                                                  │
+│         D --> D2(clear);                                                   │
+│         D --> D3(path);                                                    │
+│         F --> F1[Implementação de import];                                 │
 │     ----------                                                             │
 │                                                                            │
 │   ### 3.2. Key Components / Modules                                        │
 │                                                                            │
 │    Componente    | Localização    | Modificação P… | Responsabilid…        │
 │   ---------------+----------------+----------------+----------------       │
-│    rootCmd       |  cmd/perplexit | Adicionar      | Gerenciar o           │
-│     Flags()      | y/root.go      |  flagFile  ( - | parsing da            │
-│                  |                | f / --file ).  | nova flag de          │
-│                  |                |                | input.                │
-│    runQuery      |  cmd/perplexit | Refatorar a    | Orquestrar o          │
-│                  | y/root.go      | lógica de      | novo fluxo de         │
-│                  |                | obtenção da    | input da              │
-│                  |                | query para     | query.                │
-│                  |                | introduzir a   |                       │
-│                  |                | leitura do     |                       │
-│                  |                | arquivo        |                       │
-│                  |                | ( flagFile )   |                       │
-│                  |                | como           |                       │
-│                  |                | prioridade.    |                       │
-│    (Nova)        |  cmd/perplexit | Função         | Encapsular a          │
-│     getQueryFrom | y/root.go      | auxiliar para  | lógica de I/O         │
-│    File          |                | ler o conteúdo | e tratamento          │
-│                  |                | do arquivo e   | de erro de            │
-│                  |                | retornar o     | leitura de            │
-│                  |                |  query  (e     | arquivo.              │
-│                  |                |  error ).      |                       │
+│    cookies.go    |  cmd/perplexit | Renomear       | Mover a               │
+│                  | y/cookies.go   |  cookiesImport | definição do          │
+│                  |                | Cmd  para      | comando de            │
+│                  |                |  importCookies | importação            │
+│                  |                | Cmd , remover  | para a raiz.          │
+│                  |                | a lógica do    |                       │
+│                  |                |  init()        |                       │
+│                  |                | (AddCommand).  |                       │
+│    root.go       |  cmd/perplexit | Adicionar o    | Integrar o            │
+│                  | y/root.go      | novo           | novo comando          │
+│                  |                |  importCookies | de nível              │
+│                  |                | Cmd  ao        | superior.             │
+│                  |                |  rootCmd .     |                       │
+│    cookies.go    |  cmd/perplexit | REMOVER        | Limpar o              │
+│                  | y/cookies.go   |  cookiesImport | comando               │
+│                  |                | Cmd  do        | obsoleto.             │
+│                  |                |  func init() . |                       │
+│    cookies_test. |  cmd/perplexit | Atualizar os   | Garantir a            │
+│    go            | y/cookies_test | testes         | cobertura de          │
+│                  | .go            |  TestCookiesIm | teste                 │
+│                  |                | portCmd_...    | contínua.             │
+│                  |                | para usar o    |                       │
+│                  |                | novo nome da   |                       │
+│                  |                | variável       |                       │
+│                  |                | ( importCookie |                       │
+│                  |                | sCmd ) e a     |                       │
+│                  |                | nova estrutura |                       │
+│                  |                | de chamada.    |                       │
 │                                                                            │
 │   ### 3.3. Detailed Action Plan / Phases                                   │
 │                                                                            │
-│   #### Phase 1: Implementação da Flag de Input de Arquivo ( -f )           │
+│   #### Phase 1: Migração e Renomeação do Comando (M)                       │
 │                                                                            │
-│   Objective(s): Adicionar e integrar a flag  -f / --file  para             │
-│   carregar o                                                               │
-│   query de um arquivo.                                                     │
-│                                                                            │
-│    Task              | Rationale/Goal    | Est… | Deliverable/Crit…        │
-│   -------------------+-------------------+------+-------------------       │
-│    1.1: Declarar     | Adicionar a       | S    |  var flagFile str        │
-│    Flag              | variável global   |      | ing  em                  │
-│                      |  flagFile  e      |      |  cmd/perplexity/r        │
-│                      | registrá-la em    |      | oot.go ; Flag  -         │
-│                      |  rootCmd.Flags()  |      | f / --file               │
-│                      | .                 |      | registrada.              │
-│    1.2: Criar        | Centralizar a     | S    | Nova função              │
-│     getQueryFromFile | lógica de I/O.    |      |  getQueryFromFile        │
-│                      |                   |      | (path string) (st        │
-│                      |                   |      | ring, error)  em         │
-│                      |                   |      |  cmd/perplexity/r        │
-│                      |                   |      | oot.go .                 │
-│                      |                   |      |                          │
-│    1.3: Refatorar    | Mudar a ordem de  | M    |  runQuery                │
-│     runQuery         | prioridade para a |      | verifica                 │
-│                      | obtenção da       |      |  flagFile                │
-│                      | query.            |      | primeiro; se             │
-│                      |                   |      | presente, usa            │
-│                      |                   |      |  getQueryFromFile        │
-│                      |                   |      |   e anula                │
-│                      |                   |      |  args / stdin  se        │
-│                      |                   |      | bem-sucedido.            │
-│    1.4: Teste        | Garantir que a    | S    | Novo teste em            │
-│    Unitário          | nova função de    |      |  cmd/perplexity/r        │
-│    (Simulado)        | obtenção de query |      | oot_test.go  (ou         │
-│                      | funcione          |      | simulação de             │
-│                      | corretamente.     |      | teste) para              │
-│                      |                   |      | validar a                │
-│                      |                   |      | precedência e            │
-│                      |                   |      | leitura de               │
-│                      |                   |      | arquivo.                 │
-│                                                                            │
-│   Exemplo de Lógica em  runQuery  (Task 1.3):                              │
-│                                                                            │
-│                                                                            │
-│     ----------                                                             │
-│     // cmd/perplexity/root.go - início de runQuery                         │
-│     // ...                                                                 │
-│     // 1. Obter query do arquivo se a flag -f estiver presente             │
-│     if flagFile != "" {                                                    │
-│         query, err = getQueryFromFile(flagFile)                            │
-│         if err != nil {                                                    │
-│             render.RenderError(err)                                        │
-│             return err                                                     │
-│         }                                                                  │
-│     }                                                                      │
-│                                                                            │
-│     // 2. Se a query ainda estiver vazia, tentar args ou stdin             │
-│     if query == "" {                                                       │
-│         query, err = getQueryFromInput(args, os.Stdin, isTerminal)         │
-│         if err != nil {                                                    │
-│             // ...                                                         │
-│         }                                                                  │
-│     }                                                                      │
-│     // ...                                                                 │
-│     ----------                                                             │
-│                                                                            │
-│   #### Phase 2: Refinamento da Flag de Output de Arquivo ( -o )            │
-│                                                                            │
-│   Objective(s): Garantir que a flag de output existente esteja             │
-│   corretamente mapeada e documentada.                                      │
+│   Objective(s): Criar o novo comando de nível superior  import-cookies     │
+│   com a lógica existente.                                                  │
+│   Priority: High                                                           │
 │                                                                            │
 │    Task              | Rationale/Goal     | E… | Deliverable/Crite…        │
 │   -------------------+--------------------+----+--------------------       │
-│    2.1: Verificar    | Confirmar o        | S  | Confirmação de            │
-│    Declaração  -o    | mapeamento de  -   |    |  rootCmd.Flags().S        │
-│                      | o / --output  para |    | tringVarP(&flagOut        │
-│                      |  flagOutputFile .  |    | putFile, "output",        │
-│                      |                    |    |  "o", "", "Save re        │
-│                      |                    |    | sponse to file")          │
-│                      |                    |    | ( $104  em                │
-│                      |                    |    |  cmd/perplexity/ro        │
-│                      |                    |    | ot.go ).                  │
-│    2.2: Verificar    | Confirmar a lógica | S  | Confirmação de que        │
-│    Uso da Output     | de salvamento      |    | a lógica é:               │
-│                      | existente (já      |    |  if flagOutputFile        │
-│                      | presente em  $307  |    |  != "" { os.WriteF        │
-│                      | de                 |    | ile(flagOutputFile        │
-│                      |  cmd/perplexity/ro |    | , ...)                    │
-│                      | ot.go ) é mantida  |    |                           │
-│                      | e trata            |    |                           │
-│                      | corretamente os    |    |                           │
-│                      | formatos  .md  e   |    |                           │
-│                      |  .txt  (como       |    |                           │
-│                      | simples salvamento |    |                           │
+│    1.1: Criar novo   | Renomear o comando | S  | Em                        │
+│    comando de        | aninhado para o    |    |  cmd/perplexity/co        │
+│    importação        | novo formato de    |    | okies.go ,                │
+│                      | nível superior.    |    | renomear                  │
+│                      |                    |    |  cookiesImportCmd         │
+│                      |                    |    | para                      │
+│                      |                    |    |  importCookiesCmd         │
+│                      |                    |    | e alterar seu             │
+│                      |                    |    | campo  Use:  para         │
+│                      |                    |    |  import-                  │
+│    1.2: Mover a      | A lógica de  RunE  | S  | A função  RunE  de        │
+│    lógica do comando | deve permanecer a  |    |  importCookiesCmd         │
+│                      | mesma.             |    | é idêntica à de           │
+│                      |                    |    |  cookiesImportCmd         │
+│    1.3: Adicionar ao | Expor o novo       | S  | Em                        │
+│     rootCmd          | comando para a     |    |  cmd/perplexity/ro        │
+│                      | CLI.               |    | ot.go  no                 │
+│                      |                    |    |  func init() ,            │
+│                      |                    |    | adicionar                 │
+│                      |                    |    |  rootCmd.AddComman        │
+│                      |                    |    | d(importCookiesCmd        │
+│    1.4: Remover o    | Eliminar o comando | S  | Em                        │
+│    registro antigo   | obsoleto do        |    |  cmd/perplexity/co        │
+│                      | aninhamento.       |    | okies.go  no              │
+│                      |                    |    |  func init() ,            │
+│                      |                    |    | remover a linha           │
+│                      |                    |    | que adiciona o            │
+│                      |                    |    | comando importação        │
+│                      |                    |    | ao  cookiesCmd .          │
+│                                                                            │
+│   #### Phase 2: Atualização dos Testes (S)                                 │
+│                                                                            │
+│   Objective(s): Garantir que a cobertura de código para a lógica de        │
+│   importação seja mantida.                                                 │
+│   Priority: High                                                           │
+│                                                                            │
+│    Task               | Rationale/Goal      | | Deliverable/Criter…        │
+│   --------------------+---------------------+-+---------------------       │
+│    2.1: Atualizar     | Modificar todos os  | | Em                         │
+│    Testes de          | testes que          | |  cmd/perplexity/coo        │
+│    Importação         | referenciam         | | kies_test.go ,             │
+│                       |  cookiesImportCmd   | | todas as chamadas          │
+│                       | para usar a nova    | |  cookiesImportCmd.R        │
+│                       | variável            | | unE(...)  e                │
+│                       |  importCookiesCmd . | | referências são            │
+│                       |                     | | substituídas por           │
+│                       |                     | |  importCookiesCmd.R        │
+│                       |                     | | unE(...) .                 │
+│    2.2: Atualizar     | Verificar se a      | | Em                         │
+│    Teste de Estrutura | estrutura do        | |  cmd/perplexity/coo        │
+│                       |  cookiesCmd  não    | | kies_test.go , a           │
+│                       | contém mais o       | | função                     │
+│                       | subcomando          | |  TestCookiesCmdStru        │
+│                       |  import .           | | cture  é atualizada        │
+│                       |                     | | para remover               │
+│                       |                     | | "import" da lista          │
+│                       |                     | | de subcomandos             │
+│                       |                     | | esperados.                 │
+│    2.3: Executar      | Validar que todas   | |  go test ./cmd/perp        │
+│    Testes             | as funcionalidades  | | lexity  é executado        │
+│                       | de importação       | | com sucesso, com a         │
+│                       | continuam           | | mesma cobertura            │
+│                       | funcionando no novo | | para a lógica de           │
+│                       | comando.            | | importação.                │
+│                       |                     | |                            │
 │                                                                            │
 │   ### 3.4. API Design / Interface Changes                                  │
 │                                                                            │
-│   * Flags:                                                                 │
-│     *  --output ,  -o : String. Caminho do arquivo para salvar a saída     │
-│     (Markdown ou Text).                                                    │
-│     *  --file ,  -f : String. Caminho do arquivo contendo o input da       │
-│     query.                                                                 │
-│   * Nova Função Interna:                                                   │
-│                                                                            │
-│     ----------                                                             │
-│     // Exemplo de assinatura e corpo                                       │
-│     func getQueryFromFile(path string) (string, error) {                   │
-│         data, err := os.ReadFile(path)                                     │
-│         if err != nil {                                                    │
-│             return "", fmt.Errorf("failed to read input file %s: %w",      │
-│   path, err)                                                               │
-│         }                                                                  │
-│         return strings.TrimSpace(string(data)), nil                        │
-│     }                                                                      │
-│     ----------                                                             │
-│                                                                            │
+│    API/Interface | Antes          | Depois         | Impacto               │
+│   ---------------+----------------+----------------+----------------       │
+│    CLI Command   |  perplexity co |  perplexity im | Breaking              │
+│                  | okies import < | port-          | Change para           │
+│                  | file>          | cookies <file> | usuários              │
+│                  |                |                | existentes da         │
+│                  |                |                | função de             │
+│                  |                |                | importação.           │
+│    Variável      |  cookiesImport |  importCookies | Alteração             │
+│    Cobra         | Cmd            | Cmd            | interna em            │
+│                  |                |                |  cmd/perplexit        │
+│                  |                |                | y/cookies.go          │
+│                  |                |                | e                     │
+│                  |                |                |  cmd/perplexit        │
+│    Comando       | Continha       | Contém apenas  | Simplifica o          │
+│     cookies      |  import ,      |  status ,      | comando               │
+│                  |  status ,      |  clear ,       |  cookies .            │
+│                  |  clear ,       |  path .        |                       │
+│                  |  path .        |                |                       │
 │                                                                            │
 │   --------                                                                 │
 │                                                                            │
@@ -234,83 +216,74 @@
 │                                                                            │
 │   ### 4.1. Technical Risks & Challenges                                    │
 │                                                                            │
-│   * Risco: Prioridade do Input: O risco de o input do arquivo ( -f )       │
-│   ser ofuscado pelos argumentos ( args ) ou vice-versa.                    │
-│     * Mitigação: Implementação da lógica de prioridade estrita em          │
-│     runQuery :  -f  >  args  >  stdin . Onde o primeiro a fornecer uma     │
-│     query não-vazia é usado.                                               │
-│   * Risco: Arquivo Não Encontrado ( -f ): O usuário pode fornecer um       │
-│   caminho de arquivo inválido.                                             │
-│     * Mitigação:  getQueryFromFile  deve usar  os.ReadFile  e retornar     │
-│     um  fmt.Errorf  claro se o arquivo não puder ser lido,                 │
-│     interrompendo a execução com a mensagem de erro.                       │
-│   * Risco: Query Vazia de Arquivo ( -f ): O arquivo pode existir, mas      │
-│   estar vazio ou conter apenas espaços em branco.                          │
-│     * Mitigação:  getQueryFromFile  deve usar  strings.TrimSpace  no       │
-│     conteúdo lido e, se a query resultante for vazia,  runQuery  deve      │
-│     mostrar a ajuda (ou retornar um erro específico, dependendo da         │
-│     usabilidade desejada; a sugestão é cair na lógica de mostrar ajuda     │
-│     se for a única fonte, mas aqui, se for a fonte explicitamente          │
-│     escolhida, é melhor retornar um erro).                                 │
+│   * Risco: Confusão de Variáveis/Escopo: A lógica do comando               │
+│   cookiesImportCmd  em  cmd/perplexity/cookies.go  usa variáveis           │
+│   globais como  cfg ,  render ,  auth ,  os , etc., que devem              │
+│   permanecer acessíveis e corretamente configuradas mesmo após a           │
+│   mudança de seu comando pai.                                              │
+│     * Mitigação: Como o arquivo  cookies.go  já está no mesmo pacote (     │
+│     main ) que  root.go  onde as variáveis globais ( cfg ,  render )       │
+│     são inicializadas, a refatoração é de baixo risco, pois o escopo       │
+│     do pacote é mantido. A única mudança é qual comando Cobra é            │
+│     adicionado ao  rootCmd .                                               │
+│   * Risco: Quebra de Backward Compatibility: Esta é uma quebra de          │
+│   compatibilidade explícita para o comando de importação de cookies.       │
+│     * Mitigação: Documentar a mudança nas notas de lançamento (            │
+│     CHANGELOG  e  CLAUDE.md , se aplicável) e no  help  do comando.        │
 │                                                                            │
 │                                                                            │
 │   ### 4.2. Dependencies                                                    │
 │                                                                            │
-│   * Interna: Refatoração de  runQuery  e a nova função auxiliar            │
-│   getQueryFromFile .                                                       │
-│   * Externas: Uso de  os.ReadFile  e  strings.TrimSpace  (ambos são        │
-│   pacotes padrão Go).                                                      │
+│   * Interna (Task-to-Task): A Task 1.4 depende da conclusão da Task 1.     │
+│   1 e 1.3. A Fase 2 depende da conclusão da Fase 1.                        │
+│   * Interna (Código): O novo  importCookiesCmd  depende das funções de     │
+│   autenticação existentes ( auth.LoadCookiesFromFile ,  auth.              │
+│   LoadCookiesFromNetscape , etc.).                                         │
 │                                                                            │
 │   ### 4.3. Non-Functional Requirements (NFRs) Addressed                    │
 │                                                                            │
-│   * Usabilidade: Aumenta a flexibilidade, permitindo queries complexas     │
-│   em arquivos (útil para prompts longos) e facilitando a automação         │
-│   (encadeamento de  perplexity  com outras ferramentas que geram           │
-│   prompts).                                                                │
-│   * Robustez: O tratamento explícito de erros de leitura de arquivo em     │
-│   getQueryFromFile  torna o fluxo de input mais robusto.                   │
-│   * Manutenibilidade: O encapsulamento da lógica de I/O em                 │
-│   getQueryFromFile  mantém  runQuery  mais limpa e focada no controle      │
-│   de fluxo.                                                                │
+│   * Usabilidade (UX): Simplifica o comando de importação de cookies ao     │
+│   elevá-lo para um comando de nível superior. O padrão  perplexity         │
+│   import-cookies  é mais direto do que o aninhamento triplo                │
+│   perplexity cookies import .                                              │
+│   * Manutenibilidade: O comando  cookiesCmd  fica mais focado no           │
+│   gerenciamento do estado atual dos cookies (status, clear, path),         │
+│   enquanto a importação (uma operação de configuração) é separada,         │
+│   melhorando a separação de preocupações de comandos Cobra.                │
 │                                                                            │
 │   --------                                                                 │
 │                                                                            │
 │   ## 5. Success Metrics / Validation Criteria                              │
 │                                                                            │
-│   * Input de Arquivo Funcional:  perplexity -f prompt.md  executa a        │
-│   busca usando o conteúdo de  prompt.md  como query.                       │
-│   * Precedência de Input:  perplexity "query de cli" -f prompt.md          │
-│   deve executar a busca usando o conteúdo de  prompt.md  (flag  -f         │
-│   tem precedência).                                                        │
-│   * Output de Arquivo Funcional:  perplexity "quem descobriu o             │
-│   brasil?" -o descobrimento.md  executa a busca e salva a resposta         │
-│   completa em  descobrimento.md . O arquivo  descobrimento.md  deve        │
-│   conter a resposta completa em formato Markdown (ou texto, dependendo     │
-│   do renderizador).                                                        │
-│   * Combinação:  perplexity -f prompt.md -o saida.txt  funciona            │
-│   corretamente (Input de arquivo, Output para arquivo).                    │
+│   * O comando  perplexity import-cookies path_to_cookies.json  executa     │
+│   com sucesso o processo de importação.                                    │
+│   * O comando  perplexity cookies import  não é mais um comando válido     │
+│   e retorna um erro de Cobra (comando desconhecido).                       │
+│   * Os comandos  perplexity cookies status ,  perplexity cookies clear     │
+│   e  perplexity cookies path  continuam funcionando corretamente.          │
+│   * Todos os testes unitários ( go test ./cmd/perplexity ) passam após     │
+│   a refatoração, mantendo a cobertura da lógica de importação.             │
 │                                                                            │
 │   --------                                                                 │
 │                                                                            │
 │   ## 6. Assumptions Made                                                   │
 │                                                                            │
-│   * O conteúdo do arquivo de input ( -f ) será tratado como texto          │
-│   simples (não binário), e o  strings.TrimSpace  é desejado no             │
-│   conteúdo lido.                                                           │
-│   * A leitura de  flagFile  deve ter precedência sobre  args  ou           │
-│   stdin .                                                                  │
-│   * A flag  -o / --output  existente (que mapeia para  flagOutputFile      │
-│   ) já é suficiente para salvar a saída do  responseText  em qualquer      │
-│   arquivo especificado pelo usuário (seja  .md  ou  .txt ).                │
+│   * A lógica de  RunE  do  cookiesImportCmd  não precisa de                │
+│   modificações (apenas cópia/renomeação), pois a dependência de            │
+│   variáveis globais e funções de  auth  está resolvida via escopo do       │
+│   pacote.                                                                  │
+│   * A intenção do usuário era realmente promover a importação para um      │
+│   comando de nível superior, e não simplesmente renomear o subcomando      │
+│   dentro do comando  cookies . O comando  import-cookies  sugere um        │
+│   comando de raiz.                                                         │
 │                                                                            │
 │   ## 7. Open Questions / Areas for Further Investigation                   │
 │                                                                            │
-│   * Deveria haver uma verificação de tamanho de arquivo de input ( -f      │
-│   ) para evitar o carregamento de arquivos gigabytes na memória?           │
-│   (Decisão: Não por agora, assumindo que os prompts de LLM são             │
-│   razoavelmente pequenos, mas deve ser revisitado se houver problemas      │
-│   de memória).                                                             │
-│   * O que deve acontecer se a query for fornecida via  args  e  stdin      │
-│   e  -f ? (Decisão: Manter a prioridade  [-f] > [args] > [stdin]  para     │
-│   clareza).                                                                │
+│   * Nome Exato do Novo Comando: O formato sugerido é  import-cookies .     │
+│   A Cobra suporta hífens. Confirma-se que  import-cookies  é o nome        │
+│   final desejado em vez de  importcookies  ou  cookie-import .             │
+│   (Assunção:  import-cookies  é o formato final).                          │
+│   * Necessidade de Alias: Devo manter um alias  import  dentro do          │
+│   cookiesCmd  por um período de transição? (Decisão: Não, a                │
+│   refatoração visa a remoção completa da aninhagem).                       │
 ╰────────────────────────────────────────────────────────────────────────────╯
